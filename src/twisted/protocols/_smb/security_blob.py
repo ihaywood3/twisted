@@ -30,12 +30,12 @@ class BlobManager(object):
     may look silly, but different authentication mechanisms
     may be added over time
     """
-    def __init__(self, domain):
+    def __init__(self, sys_data):
         """
-        @param domain: the server NetBIOS domain
-        @type domain: L{str}
+        @param sys_data: the system data tuple
+        @type sys_data: L{base.SystemData}
         """
-        self.domain = domain
+        self.sys_data = sys_data
 
     def generateInitialBlob(self):
         """
@@ -82,7 +82,7 @@ class BlobManager(object):
         nt = d.getComponentByName('innerContextToken')
         n = nt.getComponentByName('negTokenInit')
         token = n.getComponentByName('mechToken')
-        self.manager = ntlm.NTLMManager(self.domain)
+        self.manager = ntlm.NTLMManager(self.sys_data)
         if token:
             self.manager.receiveToken(token.asOctets())
         else:

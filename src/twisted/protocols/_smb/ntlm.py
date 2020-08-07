@@ -3,13 +3,14 @@
 # See LICENSE for details.
 """Implement the NT Lan Manager (NTLMv2) challenge/response authentication
 protocol
+
+U{https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/
+b38c36ed-2804-4868-a9ff-8dd3182128e4}
  """
 
 from zope.interface import implementer
 
 import struct
-import time
-import socket
 import hmac
 import hashlib
 import attr
@@ -128,8 +129,6 @@ AV_SINGLE_HOST = 0x0008
 AV_TARGET_NAME = 0x0009
 AV_CHANNEL_BINDINGS = 0x000A
 
-SERVER_VERSION = (6, 1, 1)
-# major version 6.1 = Vista, roughly speaking what this emulates
 PROTOCOL_VERSION = 0x0F
 
 NT_RESP_TYPE = 0x01
@@ -231,14 +230,14 @@ class NTLMManager(object):
                       None prior to this
     @type credential: L{IUsernameHashedPassword}
     """
-    def __init__(self, domain):
+    def __init__(self, sys_data):
         """
-        @param domain: the server NetBIOS domain
-        @type domain: L{str}
+        @param sys_data: the system data tuple
+        @type sys_data: L{base.SystemData}
         """
         self.credential = None
         self.flags = DEFAULT_FLAGS
-        self.server_domain = domain
+        self.sys_data = sys_data
 
     def receiveToken(self, token):
         """
@@ -307,25 +306,26 @@ Flags           {flags!r}""",
         """
         header = HeaderType(packet_type=2)
         chal = ChallengeType()
+        hostname = self.sys_data.fqdn.split('.')[0].upper()
         if 'RequestTarget' in self.flags:
-            target = socket.gethostname().upper().encode('utf-16le')
+            target = hostname.encode('utf-16le')
         else:
             target = b''
         if 'NegotiateTargetInfo' in self.flags:
             targetinfo = avpair(
                 AV_COMPUTER_NAME,
-                socket.gethostname().upper()) + avpair(
-                    AV_DOMAIN_NAME, self.server_domain) + avpair(
-                        AV_DNS_COMPUTER_NAME, socket.getfqdn()) + avpair(
+                hostname) + avpair(
+                    AV_DOMAIN_NAME, self.sys_data.domain) + avpair(
+                        AV_DNS_COMPUTER_NAME, self.sys_data.fqdn) + avpair(
                             AV_DNS_DOMAIN_NAME, b'\0\0') + avpair(
                                 AV_TIMESTAMP,
                                 struct.pack("<Q", base.unixToNTTime(
-                                    time.time()))) + avpair(AV_EOL, b'')
+                                    base.wiggleTime()))) + avpair(AV_EOL, b'')
         else:
             targetinfo = b''
         if 'NegotiateVersion' in self.flags:
             chal.v_protocol = PROTOCOL_VERSION
-            chal.v_major, chal.v_minor, chal.v_build = SERVER_VERSION
+            chal.v_major, chal.v_minor, chal.v_build = base.SERVER_VERSION
         chal.challenge = self.challenge = secureRandom(8)
         chal.target_len = chal.target_max_len = len(target)
         chal.target_offset = base.calcsize(HeaderType) + base.calcsize(
