@@ -182,7 +182,7 @@ def octets(length=None, default=None, locked=False):
                    validator=default_only if locked else None)
 
 
-
+UUID_MAX =  uuid_mod.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
 NULL_UUID = uuid_mod.UUID("00000000-0000-0000-0000-000000000000")
 NEW_UUID = attr.Factory(uuid_mod.uuid4)
 
