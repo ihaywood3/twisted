@@ -44,7 +44,6 @@ Links
 
 import struct
 import io
-import uuid as uuid_mod
 import enum
 import attr
 import random
@@ -53,8 +52,7 @@ import platform
 from zope.interface import implementer
 
 from twisted.protocols._smb import base, ismb
-from twisted.protocols._smb.base import (byte, short, medium, long, uuid)
-
+from twisted.protocols._smb.base import (byte, short, medium, uuid, octets)
 from twisted.logger import Logger
 from twisted.internet.defer import maybeDeferred
 
@@ -185,7 +183,7 @@ def pack(obj, caller_bio=None):
     else:
         bio = io.BytesIO()
     for f in base.smb_fields(type(obj)):
-        t = f.metadata[SMB_METADATA]
+        t = f.metadata[base.SMB_METADATA]
         n = f.name
         if t == DCE_ASCII:
             v = getattr(obj, n, "")
@@ -383,7 +381,7 @@ class Request:
     p_cont_id = short()
     opnum = short()
 
-@attt.s
+@attr.s
 class Response:
     alloc_hint = medium()
     p_cont_id = short()
@@ -403,7 +401,7 @@ SEC_HEADER_MAP={
 @implementer(ismb.IIPC)
 class BasicIPC:
     """
-    An IPC share th returns a named pipe under whatever file name opened,
+    An IPC share that returns a named pipe under whatever file name opened,
     bound to the Windows API of the same name
     """
     
@@ -541,7 +539,8 @@ class DceRpcProcessor:
                     ts_version = ts.vers
             if found_ts:
                 self.contexts[pc.p_cont_id] = (pc.abstract_uuid, pc.abstract_version)
-                replies.append(ResultItem(result=BindAckResult.ACCEPTANCE.value, uuid=TRANSFER_SYNTAX, vers=ts_version)
+                replies.append(ResultItem(result=BindAckResult.ACCEPTANCE.value,
+                               uuid=TRANSFER_SYNTAX, vers=ts_version))
             else:
                 replies.append(ResultItem(
                   result=BindAckResult.PROVIDER_REJECTION,
@@ -554,11 +553,11 @@ class DceRpcProcessor:
             n_results=len(replies),
             max_xmit_frag=sec_header.max_xmit_frag,
             max_recv_frag=sec_header.max_recv_frag,
-            assoc_group_id=self.assoc_group_id            
+            assoc_group_id=self.assoc_group_id)
         r = "".join(base.pack(i) for i in replies)
         self.send('bind_ack', base.pack(ack), r, callid=header.callid)
         
-     def dcerpc_request(self, header, sec_header, payload):       
+    def dcerpc_request(self, header, sec_header, payload):       
         p_cont_id = sec_header.p_cont_id
         callid = header.callid
         try:
