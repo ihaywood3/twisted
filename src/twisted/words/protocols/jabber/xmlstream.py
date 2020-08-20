@@ -25,6 +25,7 @@ Stanzas.
 
 from binascii import hexlify
 from hashlib import sha1
+from typing import Optional, Tuple
 from zope.interface import directlyProvides, implementer
 
 from twisted.internet import defer, protocol
@@ -41,9 +42,9 @@ from twisted.words.xish.xmlstream import STREAM_ERROR_EVENT
 try:
     from twisted.internet import ssl
 except ImportError:
-    ssl = None
+    ssl = None  # type: ignore[assignment]
 if ssl and not ssl.supported:
-    ssl = None
+    ssl = None  # type: ignore[assignment]
 
 STREAM_AUTHD_EVENT = intern("//event/stream/authd")
 INIT_FAILED_EVENT = intern("//event/xmpp/initfailed")
@@ -163,7 +164,7 @@ class ConnectAuthenticator(Authenticator):
     Authenticator for initiating entities.
     """
 
-    namespace = None
+    namespace = None  # type: Optional[str]
 
     def __init__(self, otherHost):
         self.otherHost = otherHost
@@ -262,7 +263,7 @@ class ListenAuthenticator(Authenticator):
     Authenticator for receiving entities.
     """
 
-    namespace = None
+    namespace = None  # type: Optional[str]
 
     def associateWithStream(self, xmlstream):
         """
@@ -306,7 +307,7 @@ class FeatureNotAdvertized(Exception):
 
 
 @implementer(ijabber.IInitiatingInitializer)
-class BaseFeatureInitiatingInitializer(object):
+class BaseFeatureInitiatingInitializer:
     """
     Base class for initializers with a stream feature.
 
@@ -321,7 +322,7 @@ class BaseFeatureInitiatingInitializer(object):
     @type required: C{bool}
     """
 
-    feature = None
+    feature = None  # type: Optional[Tuple[str, str]]
 
     def __init__(self, xs, required=False):
         self.xmlstream = xs
@@ -899,7 +900,7 @@ def toResponse(stanza, stanzaType=None):
 
 
 @implementer(ijabber.IXMPPHandler)
-class XMPPHandler(object):
+class XMPPHandler:
     """
     XMPP protocol handler.
 
@@ -974,7 +975,7 @@ class XMPPHandler(object):
 
 
 @implementer(ijabber.IXMPPHandlerCollection)
-class XMPPHandlerCollection(object):
+class XMPPHandlerCollection:
     """
     Collection of XMPP subprotocol handlers.
 

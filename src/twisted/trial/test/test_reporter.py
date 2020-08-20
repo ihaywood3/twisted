@@ -13,6 +13,7 @@ import re
 import sys
 
 from inspect import getmro
+from typing import Type
 from unittest import expectedFailure
 from unittest import TestCase as StdlibTestCase
 
@@ -31,7 +32,7 @@ from io import BytesIO
 
 
 
-class BrokenStream(object):
+class BrokenStream:
     """
     Stream-ish object that raises a signal interrupt error. We use this to make
     sure that Trial still manages to write what it needs to write.
@@ -824,7 +825,7 @@ class UncleanWarningTodoTests(TodoTests):
 
 
 
-class MockColorizer(object):
+class MockColorizer:
     """
     Used by TreeReporterTests to make sure that output is colored correctly.
     """
@@ -966,7 +967,7 @@ class ReporterInterfaceTests(unittest.SynchronousTestCase):
         callable must take the same parameters as L{reporter.Reporter}.
     """
 
-    resultFactory = reporter.Reporter
+    resultFactory = reporter.Reporter  # type: Type[itrial.IReporter]
 
     def setUp(self):
         self.test = sample.FooTest('test_foo')
@@ -1166,7 +1167,7 @@ class SubunitReporterTests(ReporterInterfaceTests):
     This just tests that the subunit reporter implements the basic interface.
     """
 
-    resultFactory = reporter.SubunitReporter
+    resultFactory = reporter.SubunitReporter  # type: Type[itrial.IReporter]
 
 
     def setUp(self):
@@ -1395,7 +1396,7 @@ class SubunitReporterNotInstalledTests(unittest.SynchronousTestCase):
 
 
 class TimingReporterTests(ReporterTests):
-    resultFactory = reporter.TimingTextReporter
+    resultFactory = reporter.TimingTextReporter  # type: Type[itrial.IReporter]
 
 
 
@@ -1544,7 +1545,7 @@ class AdaptedReporterTests(unittest.SynchronousTestCase):
 
 
 
-class FakeStream(object):
+class FakeStream:
     """
     A fake stream which C{isatty} method returns some predictable.
 
@@ -1599,7 +1600,7 @@ class AnsiColorizerTests(unittest.SynchronousTestCase):
         to call C{curses.setupterm} if C{curses.tigetnum} previously failed
         with a C{curses.error}.
         """
-        class fakecurses(object):
+        class fakecurses:
             error = RuntimeError
             setUp = 0
 
@@ -1625,7 +1626,7 @@ class AnsiColorizerTests(unittest.SynchronousTestCase):
         to call C{curses.setupterm} if C{curses.tigetnum} returns something
         different than C{curses.error}.
         """
-        class fakecurses(object):
+        class fakecurses:
             error = RuntimeError
 
             def tigetnum(self, value):
@@ -1640,7 +1641,7 @@ class AnsiColorizerTests(unittest.SynchronousTestCase):
         L{reporter._AnsiColorizer.supported} returns C{False} if
         C{curses.tigetnum} returns less than 2 supported colors.
         """
-        class fakecurses(object):
+        class fakecurses:
             error = RuntimeError
 
             def tigetnum(self, value):
@@ -1655,7 +1656,7 @@ class AnsiColorizerTests(unittest.SynchronousTestCase):
         L{reporter._AnsiColorizer.supported} returns C{False} if
         C{curses.tigetnum} raises an error, and calls C{curses.setupterm} once.
         """
-        class fakecurses(object):
+        class fakecurses:
             error = RuntimeError
             setUp = 0
 

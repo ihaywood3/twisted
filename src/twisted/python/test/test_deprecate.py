@@ -15,7 +15,7 @@ from warnings import simplefilter, catch_warnings
 try:
     from importlib import invalidate_caches
 except ImportError:
-    invalidate_caches = None
+    invalidate_caches = None  # type: ignore[assignment,misc]
 
 from twisted.python import deprecate
 from twisted.python.deprecate import _getDeprecationWarningString
@@ -44,7 +44,7 @@ from twisted.trial.unittest import SynchronousTestCase
 # #5203.
 
 
-class _MockDeprecatedAttribute(object):
+class _MockDeprecatedAttribute:
     """
     Mock of L{twisted.python.deprecate._DeprecatedAttribute}.
 
@@ -700,14 +700,14 @@ class DeprecationWarningsTests(SynchronousTestCase):
 
 
 @deprecated(Version('Twisted', 1, 2, 3))
-class DeprecatedClass(object):
+class DeprecatedClass:
     """
     Class which is entirely deprecated without having a replacement.
     """
 
 
 
-class ClassWithDeprecatedProperty(object):
+class ClassWithDeprecatedProperty:
     """
     Class with a single deprecated property.
     """
@@ -724,7 +724,7 @@ class ClassWithDeprecatedProperty(object):
         return self._someProtectedValue
 
 
-    @someProperty.setter
+    @someProperty.setter  # type: ignore[no-redef]
     def someProperty(self, value):
         """
         Setter docstring.
@@ -1135,8 +1135,6 @@ class MutualArgumentExclusionTests(SynchronousTestCase):
         dummyParameters['c'] = FakeParameter("fake", "fake")
         fakeSig = FakeSignature(dummyParameters)
         self.assertRaises(TypeError, _passedSignature, fakeSig, (1, 2), {})
-    if not getattr(inspect, "signature", None):
-        test_invalidParameterType.skip = "inspect.signature() not available"
 
 
 

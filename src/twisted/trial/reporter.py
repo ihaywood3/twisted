@@ -57,7 +57,7 @@ class BrokenTestCaseWarning(Warning):
 
 
 
-class SafeStream(object):
+class SafeStream:
     """
     Wraps a stream object so that all C{write} calls are wrapped in
     L{untilConcludes<twisted.python.util.untilConcludes>}.
@@ -77,7 +77,7 @@ class SafeStream(object):
 
 
 @implementer(itrial.IReporter)
-class TestResult(pyunit.TestResult, object):
+class TestResult(pyunit.TestResult):
     """
     Accumulates the results of several L{twisted.trial.unittest.TestCase}s.
 
@@ -97,7 +97,7 @@ class TestResult(pyunit.TestResult, object):
         self._timings = []
 
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return ('<%s run=%d errors=%d failures=%d todos=%d dones=%d skips=%d>'
                 % (reflect.qual(self.__class__), self.testsRun,
                    len(self.errors), len(self.failures),
@@ -238,7 +238,7 @@ class TestResult(pyunit.TestResult, object):
 
 
 @implementer(itrial.IReporter)
-class TestResultDecorator(proxyForInterface(itrial.IReporter,
+class TestResultDecorator(proxyForInterface(itrial.IReporter,  # type: ignore[misc]  # noqa
                                             "_originalReporter")):
     """
     Base class for TestResult decorators.
@@ -505,7 +505,7 @@ class Reporter(TestResult):
         self._write('\n')
 
 
-    def upDownError(self, method, error, warn, printStatus):
+    def upDownError(self, method, error, warn=True, printStatus=True):
         super(Reporter, self).upDownError(method, error, warn, printStatus)
         if warn:
             tbStr = self._formatFailureTraceback(error)
@@ -876,7 +876,7 @@ class TimingTextReporter(VerboseTextReporter):
 
 
 
-class _AnsiColorizer(object):
+class _AnsiColorizer:
     """
     A colorizer is an object that loosely wraps around a stream, allowing
     callers to write text to the stream in a particular color.
@@ -927,7 +927,7 @@ class _AnsiColorizer(object):
 
 
 
-class _Win32Colorizer(object):
+class _Win32Colorizer:
     """
     See _AnsiColorizer docstring.
     """
@@ -979,7 +979,7 @@ class _Win32Colorizer(object):
 
 
 
-class _NullColorizer(object):
+class _NullColorizer:
     """
     See _AnsiColorizer docstring.
     """
@@ -998,7 +998,7 @@ class _NullColorizer(object):
 
 
 @implementer(itrial.IReporter)
-class SubunitReporter(object):
+class SubunitReporter:
     """
     Reports test output via Subunit.
 
@@ -1009,6 +1009,9 @@ class SubunitReporter(object):
 
     @since: 10.0
     """
+
+    testsRun = None
+
 
     def __init__(self, stream=sys.stdout, tbformat='default',
                  realtime=False, publisher=None):
@@ -1040,12 +1043,12 @@ class SubunitReporter(object):
         pass
 
 
+    @property
     def shouldStop(self):
         """
         Whether or not the test runner should stop running tests.
         """
         return self._subunit.shouldStop
-    shouldStop = property(shouldStop)
 
 
     def stop(self):
@@ -1131,7 +1134,7 @@ class SubunitReporter(object):
             test, util.excInfoOrFailureToExcInfo(err))
 
 
-    def addExpectedFailure(self, test, failure, todo):
+    def addExpectedFailure(self, test, failure, todo=None):
         """
         Record an expected failure from a test.
 

@@ -8,7 +8,7 @@ Tests for L{twisted.web.client.Agent} and related new client APIs.
 import zlib
 
 from io import BytesIO
-
+from unittest import skipIf
 from zope.interface.verify import verifyObject
 
 from twisted.trial.unittest import TestCase, SynchronousTestCase
@@ -62,19 +62,17 @@ try:
     from twisted.internet import ssl as _ssl
 except ImportError:
     ssl = None
-    skipWhenNoSSL = "SSL not present, cannot run SSL tests."
-    skipWhenSSLPresent = None
+    sslPresent = False
 else:
     ssl = _ssl
-    skipWhenSSLPresent = "SSL present."
-    skipWhenNoSSL = None
+    sslPresent = True
     from twisted.internet._sslverify import ClientTLSOptions, IOpenSSLTrustRoot
     from twisted.internet.ssl import optionsForClientTLS
     from twisted.protocols.tls import TLSMemoryBIOProtocol, TLSMemoryBIOFactory
 
 
     @implementer(IOpenSSLTrustRoot)
-    class CustomOpenSSLTrustRoot(object):
+    class CustomOpenSSLTrustRoot:
         called = False
         context = None
 
@@ -110,7 +108,7 @@ class StubHTTPProtocol(Protocol):
 
 
 
-class FileConsumer(object):
+class FileConsumer:
     def __init__(self, outputFile):
         self.outputFile = outputFile
 
@@ -160,11 +158,11 @@ class FileBodyProducerTests(TestCase):
         without either a C{seek} or C{tell} method, its C{length} attribute is
         set to C{UNKNOWN_LENGTH}.
         """
-        class HasSeek(object):
+        class HasSeek:
             def seek(self, offset, whence):
                 pass
 
-        class HasTell(object):
+        class HasTell:
             def tell(self):
                 pass
 
@@ -240,7 +238,7 @@ class FileBodyProducerTests(TestCase):
         L{FileBodyProducer.startProducing} fires with a L{Failure} wrapping
         that exception.
         """
-        class BrokenFile(object):
+        class BrokenFile:
             def read(self, count):
                 raise IOError("Simulated bad thing")
         producer = FileBodyProducer(BrokenFile(), self.cooperator)
@@ -400,7 +398,7 @@ class FakeReactorAndConnectMixin:
         drr.advance = mrc.advance
         return drr
 
-    class StubEndpoint(object):
+    class StubEndpoint:
         """
         Endpoint that wraps existing endpoint, substitutes StubHTTPProtocol, and
         resulting protocol instances are attached to the given test case.
@@ -447,7 +445,7 @@ class FakeReactorAndConnectMixin:
 
 
 
-class DummyEndpoint(object):
+class DummyEndpoint:
     """
     An endpoint that uses a fake transport.
     """
@@ -459,7 +457,7 @@ class DummyEndpoint(object):
 
 
 
-class BadEndpoint(object):
+class BadEndpoint:
     """
     An endpoint that shouldn't be called.
     """
@@ -712,7 +710,7 @@ class HTTPConnectionPoolTests(TestCase, FakeReactorAndConnectMixin):
         is called the protocol is returned to the cache correctly, using the
         right key.
         """
-        class StringEndpoint(object):
+        class StringEndpoint:
             def connect(self, factory):
                 p = factory.buildProtocol(None)
                 p.makeConnection(StringTransport())
@@ -798,7 +796,7 @@ class HTTPConnectionPoolTests(TestCase, FakeReactorAndConnectMixin):
 
 
 
-class AgentTestsMixin(object):
+class AgentTestsMixin:
     """
     Tests for any L{IAgent} implementation.
     """
@@ -810,7 +808,7 @@ class AgentTestsMixin(object):
 
 
 
-class IntegrationTestingMixin(object):
+class IntegrationTestingMixin:
     """
     Transport-to-Agent integration tests for both HTTP and HTTPS.
     """
@@ -920,7 +918,7 @@ class IntegrationTestingMixin(object):
 
 
 @implementer(IAgentEndpointFactory)
-class StubEndpointFactory(object):
+class StubEndpointFactory:
     """
     A stub L{IAgentEndpointFactory} for use in testing.
     """
@@ -1013,7 +1011,7 @@ class AgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin,
                                  (b"http", b"foo", 80))
                 return endpoint
 
-        class DummyPool(object):
+        class DummyPool:
             connected = False
             persistent = False
             def getConnection(this, key, ep):
@@ -1247,6 +1245,7 @@ class AgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin,
         self.assertEqual(5, timeout)
 
 
+    @skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
     def test_connectTimeoutHTTPS(self):
         """
         L{Agent} takes a C{connectTimeout} argument which is forwarded to the
@@ -1256,8 +1255,6 @@ class AgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin,
         agent.request(b'GET', b'https://foo/')
         timeout = self.reactor.tcpClients.pop()[3]
         self.assertEqual(5, timeout)
-
-    test_connectTimeoutHTTPS.skip = skipWhenNoSSL
 
 
     def test_bindAddress(self):
@@ -1271,6 +1268,7 @@ class AgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin,
         self.assertEqual('192.168.0.1', address)
 
 
+    @skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
     def test_bindAddressSSL(self):
         """
         L{Agent} takes a C{bindAddress} argument which is forwarded to the
@@ -1280,8 +1278,6 @@ class AgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin,
         agent.request(b'GET', b'https://foo/')
         address = self.reactor.tcpClients.pop()[4]
         self.assertEqual('192.168.0.1', address)
-
-    test_bindAddressSSL.skip = skipWhenNoSSL
 
 
     def test_responseIncludesRequest(self):
@@ -1416,13 +1412,12 @@ class AgentURIInjectionTests(
 
 
 
+@skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
 class AgentHTTPSTests(TestCase, FakeReactorAndConnectMixin,
                       IntegrationTestingMixin):
     """
     Tests for the new HTTP client API that depends on SSL.
     """
-    skip = skipWhenNoSSL
-
     def makeEndpoint(self, host=b'example.com', port=443):
         """
         Create an L{Agent} with an https scheme and return its endpoint
@@ -1490,7 +1485,7 @@ class AgentHTTPSTests(TestCase, FakeReactorAndConnectMixin,
         """
         expectedHost = b'example.org'
         expectedPort = 20443
-        class JustEnoughConnection(object):
+        class JustEnoughConnection:
             handshakeStarted = False
             connectState = False
             def do_handshake(self):
@@ -1507,7 +1502,7 @@ class AgentHTTPSTests(TestCase, FakeReactorAndConnectMixin,
         contextArgs = []
 
         @implementer(IOpenSSLClientConnectionCreator)
-        class JustEnoughCreator(object):
+        class JustEnoughCreator:
             def __init__(self, hostname, port):
                 self.hostname = hostname
                 self.port = port
@@ -1526,7 +1521,7 @@ class AgentHTTPSTests(TestCase, FakeReactorAndConnectMixin,
 
         expectedConnection = JustEnoughConnection()
         @implementer(IPolicyForHTTPS)
-        class StubBrowserLikePolicyForHTTPS(object):
+        class StubBrowserLikePolicyForHTTPS:
             def creatorForNetloc(self, hostname, port):
                 """
                 Emulate L{BrowserLikePolicyForHTTPS}.
@@ -1609,7 +1604,7 @@ class AgentHTTPSTests(TestCase, FakeReactorAndConnectMixin,
             from twisted.web.iweb import IPolicyForHTTPS
             from zope.interface import implementer
             @implementer(IPolicyForHTTPS)
-            class Policy(object):
+            class Policy:
                 def creatorForNetloc(self, hostname, port):
                     return optionsForClientTLS(hostname.decode("ascii"),
                                                trustRoot=authority)
@@ -1657,6 +1652,7 @@ class WebClientContextFactoryTests(TestCase):
         )
 
 
+    @skipIf(sslPresent, "SSL Present.")
     def test_missingSSL(self):
         """
         If C{getContext} is called and SSL is not available, raise
@@ -1669,6 +1665,7 @@ class WebClientContextFactoryTests(TestCase):
         )
 
 
+    @skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
     def test_returnsContext(self):
         """
         If SSL is present, C{getContext} returns a L{OpenSSL.SSL.Context}.
@@ -1677,6 +1674,7 @@ class WebClientContextFactoryTests(TestCase):
         self.assertIsInstance(ctx, ssl.SSL.Context)
 
 
+    @skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
     def test_setsTrustRootOnContextToDefaultTrustRoot(self):
         """
         The L{CertificateOptions} has C{trustRoot} set to the default trust
@@ -1686,11 +1684,6 @@ class WebClientContextFactoryTests(TestCase):
         certificateOptions = ctx._getCertificateOptions('example.com', 443)
         self.assertIsInstance(
             certificateOptions.trustRoot, ssl.OpenSSLDefaultPaths)
-
-    test_returnsContext.skip \
-        = test_setsTrustRootOnContextToDefaultTrustRoot.skip \
-        = skipWhenNoSSL
-    test_missingSSL.skip = skipWhenSSLPresent
 
 
 
@@ -1958,7 +1951,7 @@ class HTTPConnectionPoolRetryTests(TestCase, FakeReactorAndConnectMixin):
 
 
 
-class CookieTestsMixin(object):
+class CookieTestsMixin:
     """
     Mixin for unit tests dealing with cookies.
     """
@@ -2117,6 +2110,7 @@ class CookieAgentTests(TestCase, CookieTestsMixin, FakeReactorAndConnectMixin,
         self.assertEqual(req.headers.getRawHeaders(b'cookie'), [cookie])
 
 
+    @skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
     def test_secureCookie(self):
         """
         L{CookieAgent} is able to handle secure cookies, ie cookies which
@@ -2135,8 +2129,6 @@ class CookieAgentTests(TestCase, CookieTestsMixin, FakeReactorAndConnectMixin,
 
         req, res = self.protocol.requests.pop()
         self.assertEqual(req.headers.getRawHeaders(b'cookie'), [b'foo=1'])
-
-    test_secureCookie.skip = skipWhenNoSSL
 
 
     def test_secureCookieOnInsecureConnection(self):
@@ -2193,7 +2185,7 @@ class CookieAgentTests(TestCase, CookieTestsMixin, FakeReactorAndConnectMixin,
 
 
 
-class Decoder1(proxyForInterface(IResponse)):
+class Decoder1(proxyForInterface(IResponse)):  # type: ignore[misc]
     """
     A test decoder to be used by L{client.ContentDecoderAgent} tests.
     """
@@ -2460,7 +2452,7 @@ class ContentDecoderAgentWithGzipTests(TestCase,
         C{flush} on the zlib decompressor object to get uncompressed data which
         may have been buffered.
         """
-        class decompressobj(object):
+        class decompressobj:
 
             def __init__(self, wbits):
                 pass
@@ -2505,7 +2497,7 @@ class ContentDecoderAgentWithGzipTests(TestCase,
         If the C{flush} call in C{connectionLost} fails, the C{zlib.error}
         exception is caught and turned into a L{ResponseFailed}.
         """
-        class decompressobj(object):
+        class decompressobj:
 
             def __init__(self, wbits):
                 pass
@@ -2630,7 +2622,7 @@ class ProxyAgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin):
         with and a key of C{("http-proxy", endpoint)}.
         """
         endpoint = DummyEndpoint()
-        class DummyPool(object):
+        class DummyPool:
             connected = False
             persistent = False
             def getConnection(this, key, ep):
@@ -2651,7 +2643,7 @@ class ProxyAgentTests(TestCase, FakeReactorAndConnectMixin, AgentTestsMixin):
 
 
 
-class _RedirectAgentTestsMixin(object):
+class _RedirectAgentTestsMixin:
     """
     Test cases mixin for L{RedirectAgentTests} and
     L{BrowserLikeRedirectAgentTests}.
@@ -3044,7 +3036,7 @@ class AbortableStringTransport(StringTransport):
 
 
 
-class DummyResponse(object):
+class DummyResponse:
     """
     Fake L{IResponse} for testing readBody that captures the protocol passed to
     deliverBody and uses it to make a connection with a transport.
@@ -3199,9 +3191,8 @@ class ReadBodyTests(TestCase):
 
 
 
+@skipIf(not sslPresent, "SSL not present, cannot run SSL tests.")
 class HostnameCachingHTTPSPolicyTests(TestCase):
-
-    skip = skipWhenNoSSL
 
     def test_cacheIsUsed(self):
         """

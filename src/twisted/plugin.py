@@ -16,18 +16,7 @@ import sys
 
 from zope.interface import Interface, providedBy
 
-def _determinePickleModule():
-    """
-    Determine which 'pickle' API module to use.
-    """
-    try:
-        import cPickle
-        return cPickle
-    except ImportError:
-        import pickle
-        return pickle
-
-pickle = _determinePickleModule()
+import pickle
 
 from twisted.python.components import getAdapterFactory
 from twisted.python.reflect import namedAny
@@ -48,7 +37,7 @@ class IPlugin(Interface):
 
 
 
-class CachedPlugin(object):
+class CachedPlugin:
     def __init__(self, dropin, name, description, provided):
         self.dropin = dropin
         self.name = name
@@ -56,7 +45,7 @@ class CachedPlugin(object):
         self.provided = provided
         self.dropin.plugins.append(self)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '<CachedPlugin %r/%r (provides %r)>' % (
             self.name, self.dropin.moduleName,
             ', '.join([i.__name__ for i in self.provided]))
@@ -77,7 +66,7 @@ class CachedPlugin(object):
 
 
 
-class CachedDropin(object):
+class CachedDropin:
     """
     A collection of L{CachedPlugin} instances from a particular module in a
     plugin package.

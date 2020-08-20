@@ -29,7 +29,7 @@ from twisted.internet import defer
 
 
 
-class CapturingDebugger(object):
+class CapturingDebugger:
 
     def __init__(self):
         self._calls = []
@@ -41,7 +41,7 @@ class CapturingDebugger(object):
 
 
 @implementer(IReporter)
-class CapturingReporter(object):
+class CapturingReporter:
     """
     Reporter that keeps a log of all actions performed on it.
     """
@@ -98,8 +98,44 @@ class CapturingReporter(object):
         """
 
 
+    def addError(self, test, error):
+        """
+        Do nothing. These tests don't care about addError.
+        """
 
-class TrialRunnerTestsMixin(object):
+
+    def addFailure(self, test, failure):
+        """
+        Do nothing. These tests don't care about addFailure.
+        """
+
+
+    def addExpectedFailure(self, test, failure, todo=None):
+        """
+        Do nothing. These tests don't care about addExpectedFailure.
+        """
+
+
+    def addUnexpectedSuccess(self, test, todo=None):
+        """
+        Do nothing. These tests don't care about addUnexpectedSuccess.
+        """
+
+
+    def addSkip(self, test, reason):
+        """
+        Do nothing. These tests don't care about addSkip.
+        """
+
+
+    def wasSuccessful(self):
+        """
+        Do nothing. These tests don't care about wasSuccessful.
+        """
+
+
+
+class TrialRunnerTestsMixin:
     """
     Mixin defining tests for L{runner.TrialRunner}.
     """
@@ -196,7 +232,7 @@ class TrialRunnerWithUncleanWarningsReporterTests(TrialRunnerTestsMixin,
 
 
 
-class DryRunMixin(object):
+class DryRunMixin:
     """
     Mixin for testing that 'dry run' mode works with various
     L{pyunit.TestCase} subclasses.
@@ -773,7 +809,7 @@ class TestHolderTests(unittest.SynchronousTestCase):
 
 
 
-class ErrorHolderTestsMixin(object):
+class ErrorHolderTestsMixin:
     """
     This mixin defines test methods which can be applied to a
     L{runner.ErrorHolder} constructed with either a L{Failure} or a
@@ -785,7 +821,7 @@ class ErrorHolderTestsMixin(object):
     """
     exceptionForTests = ZeroDivisionError('integer division or modulo by zero')
 
-    class TestResultStub(object):
+    class TestResultStub:
         """
         Stub for L{TestResult}.
         """

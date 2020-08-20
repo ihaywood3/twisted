@@ -21,7 +21,7 @@ class FoolishError(Exception):
 
 
 
-class FailureInSetUpMixin(object):
+class FailureInSetUpMixin:
     def setUp(self):
         raise FoolishError("I am a broken setUp method")
 
@@ -42,7 +42,7 @@ class AsynchronousTestFailureInSetUp(
 
 
 
-class FailureInTearDownMixin(object):
+class FailureInTearDownMixin:
     def tearDown(self):
         raise FoolishError("I am a broken tearDown method")
 
@@ -63,7 +63,7 @@ class AsynchronousTestFailureInTearDown(
 
 
 
-class FailureButTearDownRunsMixin(object):
+class FailureButTearDownRunsMixin:
     """
     A test fails, but its L{tearDown} still runs.
     """
@@ -179,7 +179,7 @@ class DelayedCall(unittest.TestCase):
         reactor.callLater(0, self.go)
         reactor.iterate(0.01)
         self.fail("Deliberate failure to mask the hidden exception")
-    testHiddenException.suppress = [util.suppress(
+    testHiddenException.suppress = [util.suppress(  # type: ignore[attr-defined]  # noqa
         message=r'reactor\.iterate cannot be used.*',
         category=DeprecationWarning)]
 
