@@ -48,6 +48,7 @@ import enum
 import attr
 import random
 import platform
+import uuid as uuid_mod
 
 from zope.interface import implementer
 
@@ -90,11 +91,11 @@ def _register(f, pipe, opcode):
 DCE_ASCII="A"
 WCHAR="W"
 
-def dce_ascii(default=attr.NOTHING):
+def dce_ascii(default=""):
     """a DCE/RPC ASCII string"""
     return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: DCE_ASCII})
 
-def wchar(default=attr.NOTHING):
+def wchar(default=""):
     """a Windows "wide char" (UTF-16) string"""
     return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: WCHAR})
 
@@ -219,6 +220,9 @@ PTYPES = [
 RPC_VERSION = 5
 RPC_VERSION_MINOR=1
 
+SERVER_VERSION=6
+SERVER_VERSION_MINOR=1
+
 PFC_FIRST_FRAG = 0x01
 PFC_LAST_FRAG = 0x02
 PFC_PENDING_CANCEL = 0x04
@@ -308,7 +312,7 @@ class ResultItem:
     vers = medium()
 
 # we only support one transfer syntax, the "standard" 32-bit one
-TRANSFER_SYNTAX = uuid.UUID("8a885d04-1ceb-11c9-9fe8-08002b104860")
+TRANSFER_SYNTAX = uuid_mod.UUID("8a885d04-1ceb-11c9-9fe8-08002b104860")
 
 # bind nak failure codes
 class BindNakFailure(enum.Enum):
@@ -436,11 +440,12 @@ class DceRpcProcessor:
         @param pipe_name: filename of pipe (determines API offered)
         @type pipe_name: L{str}
         """
-        self.name = pipe_name
+        self.pipe = pipe_name
         self.reply = io.BytesIO()
         self.cancellations = set()
         self.sys_data = sys_data
         self.avatar = avatar
+        self.buffer = b''
         
     def dataReceived(self, data):
         self.buffer += data
@@ -543,7 +548,7 @@ class DceRpcProcessor:
                                uuid=TRANSFER_SYNTAX, vers=ts_version))
             else:
                 replies.append(ResultItem(
-                  result=BindAckResult.PROVIDER_REJECTION,
+                  result=BindAckResult.PROVIDER_REJECTION.value,
                   reason=BindAckReason.PROPOSED_TRANSFER_SYNTAXES_NOT_SUPPORTED.value))
         if sec_header.assoc_group_id > 0:
             self.assoc_group_id = sec_header.assoc_group_id
@@ -554,14 +559,15 @@ class DceRpcProcessor:
             max_xmit_frag=sec_header.max_xmit_frag,
             max_recv_frag=sec_header.max_recv_frag,
             assoc_group_id=self.assoc_group_id)
-        r = "".join(base.pack(i) for i in replies)
+        r = b"".join(base.pack(i) for i in replies)
         self.send('bind_ack', base.pack(ack), r, callid=header.callid)
         
     def dcerpc_request(self, header, sec_header, payload):       
         p_cont_id = sec_header.p_cont_id
         callid = header.callid
+        log.debug("DCE/RPC request {pipe}/{opnum}", pipe=self.pipe, opnum=sec_header.opnum)
         try:
-            func = RPC_FUNCTIONS[self.pipe][sec_header.opcode]
+            func = RPC_FUNCTIONS[self.pipe][sec_header.opnum]
         except KeyError:
             self.send_fault(FaultStatus.unsupported_operation.value,
                 p_cont_id, callid, no_exec=True)
@@ -569,6 +575,7 @@ class DceRpcProcessor:
             
         resetReferents()
         d = maybeDeferred(func, self.sys_data, self.avatar, payload)
+       
         def cb_request(reply):
             if callid in self.cancellations:
                 self.cancellations.discard(callid)
@@ -576,9 +583,11 @@ class DceRpcProcessor:
             resp = Response(p_cont_id=p_cont_id,
                 alloc_hint=len(reply))
             self.send('response', base.pack(resp), reply, callid=callid)
+ 
         def eb_request(failure):
-            log.error("failure on {pipe}/{opcode}: {e}", pipe=self.pipe,
-                opcode=sec_header.opcode, e=failure.getTraceback())
+            log.failure("failure on {pipe}/{opnum}", failure,
+                pipe=self.pipe,
+                opnum=sec_header.opnum)
             if failure.check(ZeroDivisionError):
                 if 'float' in failure.value.args[0]:
                     status = FaultStatus.fp_div_zero
@@ -599,6 +608,7 @@ class DceRpcProcessor:
             else:
                 status = FaultStatus.user_defined
             self.send_fault(status.value, p_cont_id, callid)
+  
         d.addCallback(cb_request)
         d.addErrback(eb_request)
         
@@ -661,8 +671,8 @@ class WkstaInfo100:
     platform_id = medium(default=500) # 500= Windows any other value will upset clients
     ref2 = referent()
     ref3 = referent()
-    vers_major = medium(default=base.SERVER_VERSION[0])
-    vers_minor = medium(default=base.SERVER_VERSION[1])
+    vers_major = medium(default=SERVER_VERSION)
+    vers_minor = medium(default=SERVER_VERSION_MINOR) 
     computername = wchar()
     langroup = wchar()
     werror = medium(0)
@@ -693,8 +703,8 @@ class NetSvrInfo101:
     ref1 = referent()
     platform_id = medium(default=500) # 500= Windows any other value will upset clients
     ref2 = referent()
-    vers_major = medium(default=base.SERVER_VERSION[0])
-    vers_minor = medium(default=base.SERVER_VERSION[1])
+    vers_major = medium(default=SERVER_VERSION)
+    vers_minor = medium(default=SERVER_VERSION_MINOR)
     server_type = medium()
     ref3 = referent()
     name = wchar()
