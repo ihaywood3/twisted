@@ -412,7 +412,7 @@ class BasicIPC:
     def __init__(self, sys_data, avatar):
         """
         @param sys_data: tuple for system data
-        @type sys_data: L{core.SystemData}
+        @type sys_data: L{types.SystemData}
         
         @param avatar: avatar of logged-in user
         @type avatar; L{ismb.ISMBServer}
@@ -432,7 +432,7 @@ class DceRpcProcessor:
     def __init__(self, sys_data, avatar, pipe_name):
         """
         @param sys_data: tuple for system data
-        @type sys_data: L{core.SystemData}
+        @type sys_data: L{types.SystemData}
         
         @param avatar: avatar of logged-in user
         @type avatar; L{ismb.ISMBServer}

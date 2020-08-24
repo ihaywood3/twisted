@@ -6,12 +6,10 @@ holds data structures and associated bitmasks, enums and constants
 used in the core protocol
 """
 
-import struct
 from collections import namedtuple
 import enum
 import attr
 
-from twisted.protocols._smb import base
 from twisted.protocols._smb.base import (byte, short, medium, long, uuid,
                                          octets)
 										 
@@ -293,7 +291,7 @@ class WriteReq:
     channel_length = short()
     flags = medium()
 
-@attt.s
+@attr.s
 class WriteResp:
     size = short(17, locked=True)
     reserved = short()
@@ -490,7 +488,7 @@ class LockReq:
     lock_sequence = medium()
     file_id = uuid()
  
-'
+
 
 # LockElement.flags
 LOCKFLAG_SHARED_LOCK=0x00000001
@@ -724,14 +722,14 @@ class FileBasicInformation:
     attributes = medium()
     reserved = medium()
  
- @attr.s
+@attr.s
 class FileNetworkOpenInformation:
     ctime = long()
     atime = long()
     wtime = long()
     mtime = long()
     alloc_size = long()
-    end_of_file = long(
+    end_of_file = long()
     attributes = medium()
     reserved = medium()
  
@@ -742,34 +740,13 @@ class FileRenameInformation:
     padding = octets(7)
     root_dir = long() # not used
     length = medium()
-    filename = attr.ib()
+    filename = attr.ib(default="")
     
     
 @attr.s
 class FileDispositionInformation:
     delete_pending = byte()
     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

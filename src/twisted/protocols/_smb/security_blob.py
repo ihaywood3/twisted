@@ -33,7 +33,7 @@ class BlobManager(object):
     def __init__(self, sys_data):
         """
         @param sys_data: the system data tuple
-        @type sys_data: L{base.SystemData}
+        @type sys_data: L{types.SystemData}
         """
         self.sys_data = sys_data
 
@@ -148,6 +148,10 @@ class BlobManager(object):
     @property
     def credential(self):
         return self.manager.credential
+        
+    @property
+    def secret_key(self):
+        return self.manager.ersk  
 
 
 

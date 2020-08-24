@@ -7,13 +7,15 @@ U{https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/
 5606ad47-5ee0-437a-817e-70c366052962}
 """
 
+import pdb
 import struct
 import binascii
 from uuid import uuid4
 import socket
+import hmac
 
-from twisted.protocols._smb import base, security_blob, dcerpc, types
-from twisted.protocols._smb.ismb import (ISMBServer, IFilesystem, IPipe, IIPC,
+from twisted.protocols._smb import base, security_blob, dcerpc, types, shim
+from twisted.protocols._smb.ismb import (ISMBServer, IFilesystem, IIPC,
                                          IPrinter, NoSuchShare)
 
 from twisted.internet import protocol
@@ -139,13 +141,13 @@ signature       {sig}""",
                     log.error("command '{cmd}' not implemented",
                               cmd=COMMANDS[packet.hdr.command][0])
                     errorResponse(packet, types.NTStatus.NOT_IMPLEMENTED)
-            except NotImplementedError as e:
+            except NotImplementedError:
                 log.failure("in {cmd}", cmd=COMMANDS[packet.hdr.command][0])
                 errorResponse(packet, types.NTStatus.NOT_IMPLEMENTED)
             except base.SMBError as e:
                 log.error("SMB error: {e}", e=str(e))
                 errorResponse(packet, e.ntstatus)
-            except BaseException:
+            except:
                 log.failure("in {cmd}", cmd=COMMANDS[packet.hdr.command][0])
                 errorResponse(packet, types.NTStatus.UNSUCCESSFUL)
         else:
@@ -170,7 +172,7 @@ def sendHeader(packet, command=None, status=types.NTStatus.SUCCESS):
     @param status: packet status, an NTSTATUS code
     @type status: L{int} or L{types.NTStatus}
     """
-    # FIXME credit and signatures not supported yet
+    # FIXME credit not supported yet
     if packet.hdr is None:
         packet.hdr = types.HeaderSync()
     packet.hdr.flags |= types.FLAG_SERVER
@@ -180,11 +182,25 @@ def sendHeader(packet, command=None, status=types.NTStatus.SUCCESS):
         command = cmds.index(command)
     if command is not None:
         packet.hdr.command = command
+    if status is None:
+        status = types.NTStatus.UNSUCCESSFUL
     if isinstance(status, types.NTStatus):
         status = status.value
     packet.hdr.status = status
+    if packet.hdr.credit_request > 0:
+        packet.hdr.credit_charge = 1
     packet.hdr.credit_request = 1
-    packet.data = base.pack(packet.hdr) + packet.data
+    packet.signature = b'\0' * 16
+    data1 = base.pack(packet.hdr) + packet.data
+    if 'secret_key' in packet.ctx:
+        packet.hdr.flags |= types.FLAG_SIGNED
+        sig = hmac.new(packet.ctx['secret_key'], data1, 'sha256').digest()
+        # NOTE SMB3 uses different hash
+        packet.hdr.signature = sig[:16]
+        data1 = base.pack(packet.hdr) + packet.data
+    else:
+        packet.hdr.flags &= ~types.FLAG_SIGNED
+    packet.data = data1
     packet.send()
 
 
@@ -306,13 +322,14 @@ Prev. session ID 0x{pid:016x}""",
             log.debug("got credential: %r" % blob_manager.credential)
             d = packet.ctx['portal'].login(
                 blob_manager.credential,
-                SMBMind(packet.body.prev_session_id,
+                types.SMBMind(packet.body.prev_session_id,
                         blob_manager.credential.domain, packet.ctx['addr']),
                 ISMBServer)
 
             def cb_login(t):
                 _, packet.ctx['avatar'], packet.ctx['logout_thunk'] = t
                 blob = blob_manager.generateAuthResponseBlob(True)
+                packet.ctx['secret_key'] = blob_manager.secret_key
                 log.debug("successful login")
                 sessionSetupResponse(packet, blob, types.NTStatus.SUCCESS)
 
@@ -379,7 +396,10 @@ def smb_logoff(packet, resp_type):
     else:
         cb_logoff(None)
 
-
+def smb_echo(packet, resp_type):
+    packet.data = base.pack(resp_type())
+    sendHeader(packet)
+   
 
 def smb_tree_connect(packet, resp_type):
     avatar = packet.ctx.get('avatar')
@@ -399,7 +419,7 @@ Path   {path!r}
               path=path)
     path = path.split("\\")[-1]
     if path == 'IPC$':
-        d = succeed(dcerpc.BasicIPC(packet.ctx['sys_data']))
+        d = succeed(dcerpc.BasicIPC(packet.ctx['sys_data'], packet.ctx['avatar']))
     else:
         d = maybeDeferred(avatar.getShare, path)
 
@@ -427,14 +447,17 @@ Path   {path!r}
                 share_type=types.SHARE_PIPE,
                 flags=0,
                 max_perms=(
-                    types.FILE_READ_DATA | types.FILE_WRITE_DATA | types.FILE_APPEND_DATA  |
-                    #| FILE_READ_EA |
+                    types.FILE_READ_DATA | 
+                    #types.FILE_WRITE_DATA | 
+                    #types.FILE_APPEND_DATA  |
+                    types.FILE_READ_EA |
                     # FILE_WRITE_EA |
                     # FILE_DELETE_CHILD |
                     types.FILE_EXECUTE | types.FILE_READ_ATTRIBUTES |
                     # FILE_WRITE_ATTRIBUTES |
-                    types.DELETE | types.READ_CONTROL |
-                    # WRITE_DAC |
+                    types.DELETE | 
+                    types.READ_CONTROL |
+                    types.WRITE_DAC |
                     # WRITE_OWNER |
                     types.SYNCHRONIZE))
         if IPrinter.providedBy(share):
@@ -510,11 +533,11 @@ Path   {path!r}
         d1 = maybeDeferred(tree.open, path)
  
         def cb_create_ipc(pipe):
-            shim = shim.PipeShim(pipe)
+            driver= shim.PipeShim(pipe)
             file_id = uuid4()
-            packet.ctx['files'][file_id] = shim
+            packet.ctx['files'][file_id] = driver
             # for pipes not a Deferred, but otherwise would be
-            noi = shim.getFileNetworkOpenInformation()
+            noi = driver.getFileNetworkOpenInformation()
             cb_create_final(noi, file_id, types.CreateAction.Opened)
  
         d1.addCallback(cb_create_ipc)
@@ -677,12 +700,12 @@ def smb_query_info(packet, resp_type):
         try:
             info_class = types.InfoClassFiles(packet.body.info_class)
         except ValueError:
-            raise SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS)
+            raise base.SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS)
     elif info_type == types.InfoType.FILESYSTEM:
         try:
             info_class = types.InfoClassFileSystems(packet.body.info_class)
         except ValueError:
-            raise SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS) 
+            raise base.SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS) 
     else:
         raise base.SMBError("invalid info_type", types.NTStatus.INVALID_PARAMETER)
     log.debug("""
@@ -764,7 +787,7 @@ file id  {file_id}
 flags    {flags:04x}
 file     {fd!r}
 ctl_code {ctl_code}
-input    {jnput_data!r}
+input    {input_data!r}
 output   {output_data!r}
 max input  {max_input_response}
 max output {max_output_response}
@@ -779,9 +802,31 @@ max output {max_output_response}
     input_data=input_data[:32],
     output_data=output_data[:32])
 
+    def cb_ioctl(output_data):
+        oo = base.calcsize(types.HeaderAsync) + base.calcsize(resp_type)
+        ol = len(output_data)
+        if ol > packet.body.max_output_response:
+            raise base.SMBError("response too large", types.NTStatus.BUFFER_OVERFLOW)
+        resp = resp_type(
+            ctl_code=packet.body.ctl_code,
+            file_id=packet.body.file_id,
+            input_offset=oo,
+            output_offset=oo,
+            output_length=ol)
+        packet.data = base.pack(resp) + output_data
+        sendHeader(packet)     
+        
     if ctl_code == types.Ioctl.FSCTL_DFS_GET_REFERRALS or \
         ctl_code == types.Ioctl.FSCTL_DFS_GET_REFERRALS_EX:
         raise base.SMBError("no DFS", types.NTStatus.NOT_FOUND)
+    elif ctl_code == types.Ioctl.FSCTL_PIPE_TRANSCEIVE: 
+        if fd is None:
+            raise base.SMBError("no valid file id", types.NTStatus.INVALID_DEVICE_REQUEST)
+        if not isinstance(fd, shim.PipeShim):
+            raise base.SMBError("not a pipe", types.NTStatus.INVALID_DEVICE_REQUEST)
+        d = fd.pipeTranscieve(input_data)
+        d.addCallback(cb_ioctl)
+        d.addErrback(eb_common, packet)    
     else:
         raise base.SMBError("fsctl %r not supported" % ctl_code, types.NTStatus.INVALID_DEVICE_REQUEST)
         
@@ -815,7 +860,7 @@ class SMBFactory(protocol.Factory):
             boot_time = base.wiggleTime()
             fqdn = socket.getfqdn()
             server_uuid = base.getMachineUUID()
-        self.sys_data = SystemData(server_uuid, boot_time, domain, fqdn, fake)
+        self.sys_data = types.SystemData(server_uuid, boot_time, domain, fqdn, fake)
          
 
     def buildProtocol(self, addr):

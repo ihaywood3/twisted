@@ -13,7 +13,8 @@ import os
 import platform
 import time
 import random
-
+import re
+import enum
 from twisted.internet import protocol
 from twisted.logger import Logger
 from twisted.python.randbytes import secureRandom
@@ -27,13 +28,15 @@ SERVER_VERSION = (6, 1, 1)
 class SMBError(Exception):
     """SMB specific errors
     """
-    def __init__(self, msg, ntstatus=0xC0000001):
+    def __init__(self, msg, ntstatus=None):
         self.msg = msg
         self.ntstatus = ntstatus
 
     def __str__(self):
-        return "%s (0x%08x)" % (self.msg, self.ntstatus)
-
+        if self.ntstatus:
+            return "%s %s (0x%08x)" % (self.msg, self.ntstatus.name, self.ntstatus.value)
+        else:
+            return self.msg
 
 
 def unixToNTTime(epoch):
@@ -225,6 +228,8 @@ def pack(obj):
 
 def _conv_arg(obj, attrib):
     val = getattr(obj, attrib.name)
+    if isinstance(val, enum.Enum):
+        val = val.value
     if type(val) is uuid_mod.UUID:
         val = val.bytes_le
     return val

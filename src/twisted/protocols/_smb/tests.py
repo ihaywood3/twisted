@@ -278,14 +278,23 @@ class ChatProcess(ProcessProtocol):
         print(data)
         if self.chat:
             prompt, reply = self.chat[0]
-            m = re.search(prompt, data)
+            if prompt.startswith("/"):
+                use_re = True
+                m = re.search(prompt[1:], data)
+            else:
+                use_re = False
+                m = (prompt in data)
             if m:
-                self.matches.append(m)
+                if use_re:
+                    self.matches.append(m)
+                else:
+                    self.matches.append(data)
                 if reply:
-                    for i in range(1, 10):
-                        t = "\\%d" % i
-                        if t in reply:
-                            reply = reply.replace(t, m.group(i))
+                    if use_re:
+                        for i in range(1, 10):
+                            t = "\\%d" % i
+                            if t in reply:
+                                reply = reply.replace(t, m.group(i))
                     self.transport.write(reply.encode('utf-8'))
                 else:
                     self.transport.closeStdin()
@@ -314,19 +323,18 @@ def spawn(chat, args, ignoreRCode=False, usePTY=True):
 
 
 
-TESTPORT = 5445
+TESTPORT = 445
+TESTUSER = "user"
+TESTPASSWORD = "password"
 
 
-
-class SambaClientTests(unittest.TestCase):
+class TestSambaClient(unittest.TestCase):
     def setUp(self):
         # Start the server
         r = TestRealm()
         p = portal.Portal(r)
         users_checker = checkers.InMemoryUsernamePasswordDatabaseDontUse()
-        self.username = "user"
-        self.password = "test-password"
-        users_checker.addUser(self.username, self.password)
+        users_checker.addUser(TESTUSER, TESTPASSWORD)
         p.registerChecker(users_checker, credentials.IUsernameHashedPassword)
         self.factory = core.SMBFactory(p)
         self.port = port = reactor.listenTCP(TESTPORT, self.factory)
@@ -335,12 +343,48 @@ class SambaClientTests(unittest.TestCase):
     def smbclient(self, chat, ignoreRCode=False):
         return spawn(chat, [
             "/usr/bin/smbclient",
-            "\\\\%s\\share" % socket.gethostname(), self.password, "-m",
-            "SMB2", "-U", self.username, "-I", "127.0.0.1", "-p",
+            "\\\\%s\\share" % socket.gethostname(), TESTPASSWORD, "-m",
+            "SMB2", "-U", TESTUSER, "-I", "127.0.0.1", "-p",
             str(TESTPORT), "-d", "10"
         ],
                      ignoreRCode=ignoreRCode,
                      usePTY=True)
 
+    def smbclient_list(self, chat, ignoreRCode=False):
+        return spawn(chat, [
+            "/usr/bin/smbclient",
+            "-L", "\\\\%s" % socket.gethostname(), 
+            "-m", "SMB2", 
+            "-U", TESTUSER+"%"+TESTPASSWORD,
+            "-I", "127.0.0.1", "-p", str(TESTPORT), "-d", "10"
+        ],
+                     ignoreRCode=ignoreRCode)     
+
     def test_logon(self):
-        return self.smbclient([("session setup ok", None)], ignoreRCode=True)
+        return self.smbclient([("smb: \\>", "quit\n")])
+
+    def test_listshares(self):
+        return self.smbclient_list([("share", None)])
+        
+        
+if __name__ == '__main__':
+    r = TestRealm()
+    p = portal.Portal(r)
+    users_checker = checkers.InMemoryUsernamePasswordDatabaseDontUse()
+    users_checker.addUser(TESTUSER, TESTPASSWORD)
+    p.registerChecker(users_checker, credentials.IUsernameHashedPassword)
+    factory = core.SMBFactory(p)
+    port = reactor.listenTCP(445, factory)
+    reactor.run()
+
+
+
+
+
+
+
+
+
+
+
+

@@ -10,15 +10,9 @@ The shim objects play the role of "filesystem driver" in Windows.
 """
 
 
-import time
-
 from twisted.protocols._smb import base, types
-from twisted.protocols._smb.ismb import (ISMBServer, IFilesystem, IPipe, IIPC,
-                                         IPrinter, NoSuchShare)
-
-from twisted.internet import protocol
 from twisted.logger import Logger
-from twisted.internet.defer import maybeDeferred, succeed
+from twisted.internet.defer import succeed
 
 log = Logger()
 
@@ -27,7 +21,7 @@ class PipeShim:
 
     def __init__(self, pipe):
         self.__pipe = pipe
-        self.ctime = time.time()
+        self.ctime = base.wiggleTime()
         self.wtime = self.ctime
         self.atime = self.ctime
         
@@ -35,17 +29,25 @@ class PipeShim:
         data = self.__pipe.dataAvailable(length)
         if len(data) == 0:
             raise base.SMBError('pipe empty', types.NTStatus.PIPE_EMPTY)
-        self.atime = time.time()
+        self.atime = base.wiggleTime()
         return succeed(data)
         
     def write(self, offset, data):
         self.__pipe.dataReceived(data)
-        self.wtime = time.time()
+        self.wtime = base.wiggleTime()
         self.atime = self.wtime
         return succeed(len(data))
+        
+    def pipeTranscieve(self, data):
+        self.__pipe.dataReceived(data)
+        self.wtime = base.wiggleTime()
+        self.atime = self.wtime
+        data = self.__pipe.dataAvailable(8192) # for now use 8K
+        return succeed(data)
+       
 
     def flush(self):
-        self.wtime = time.time()
+        self.wtime = base.wiggleTime()
         self.atime = self.wtime
         return succeed(None)
         
@@ -53,7 +55,7 @@ class PipeShim:
         return succeed(None)
         
     def getFileStandardInformation(self):
-        # for pipes "canned" data will suffice
+        # for pipes entirely "canned" data will suffice
         return types.FileStandardInformation(
            alloc_size=types.CLUSTER_SIZE, 
            end_of_file=0, 

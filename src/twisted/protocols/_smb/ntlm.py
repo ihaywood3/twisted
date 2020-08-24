@@ -233,7 +233,7 @@ class NTLMManager(object):
     def __init__(self, sys_data):
         """
         @param sys_data: the system data tuple
-        @type sys_data: L{base.SystemData}
+        @type sys_data: L{types.SystemData}
         """
         self.credential = None
         self.flags = DEFAULT_FLAGS
