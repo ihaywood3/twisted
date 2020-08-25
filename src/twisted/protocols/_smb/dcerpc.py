@@ -197,7 +197,7 @@ def pack(obj, caller_bio=None):
             v = v.encode("utf-16le")
             bio.write(_3ints.pack(l, 0, l))
             bio.write(v)
-            if len(v) % 2 > 0:
+            if l % 2 ==0:
                 bio.write(b'\0\0')
             else:
                 bio.write(b'\0\0\0\0') # maintain 4-byte alignment
@@ -249,7 +249,7 @@ class FloatFormat(enum.Enum):
 @attr.s
 class DceHeader:
     rpc_vers = byte(RPC_VERSION)
-    rpc_vers_minor = byte(RPC_VERSION_MINOR)
+    rpc_vers_minor = byte()
     ptype = byte()
     pfc_flags = byte()
     drep = octets(4)
@@ -378,6 +378,7 @@ class Fault:
     cancel_count = byte()
     reserved = byte()
     status = medium()
+    reserved2 = medium()
 
 @attr.s
 class Request:
@@ -446,6 +447,7 @@ class DceRpcProcessor:
         self.sys_data = sys_data
         self.avatar = avatar
         self.buffer = b''
+        self.rpc_vers_minor = 0 # use lowest version initially
         
     def dataReceived(self, data):
         self.buffer += data
@@ -468,7 +470,7 @@ class DceRpcProcessor:
             insane = True
             version = True
             log.error("DCE/RPC major version {n}, must be {m}", n=header.rpc_vers, m=RPC_VERSION)
-        if header.rpc_vers_minor > RPC_VERSION:
+        if header.rpc_vers_minor > RPC_VERSION_MINOR:
             insane = True
             version = True
             log.error("DCE/RPC minor version {n}, must be {m} or lower", n=header.rpc_vers_minor, m=RPC_VERSION_MINOR)
@@ -554,6 +556,7 @@ class DceRpcProcessor:
             self.assoc_group_id = sec_header.assoc_group_id
         else:
             self.assoc_group_id = random.randint(1, MAX_ASSOC_GROUP_ID)
+        self.rpc_vers_minor = header.rpc_vers_minor
         ack = BindAck(
             n_results=len(replies),
             max_xmit_frag=sec_header.max_xmit_frag,
@@ -569,6 +572,7 @@ class DceRpcProcessor:
         try:
             func = RPC_FUNCTIONS[self.pipe][sec_header.opnum]
         except KeyError:
+            log.error("function not found")
             self.send_fault(FaultStatus.unsupported_operation.value,
                 p_cont_id, callid, no_exec=True)
             return
@@ -631,6 +635,7 @@ class DceRpcProcessor:
                 0, 0]),
             frag_length = len(payload)+len(sec_header)+base.calcsize(DceHeader),
             ptype = PTYPES.index(ptype_name),
+            rpc_vers_minor = self.rpc_vers_minor,
             pfc_flags = flags)
         self.reply.write(base.pack(header))
         if sec_header:
@@ -642,10 +647,10 @@ class DceRpcProcessor:
         self.cancellations.add(header.callid)
         
  
-    def dataAvailable(self, length):
+    def dataAvailable(self, length=-1):
         r = self.reply.getvalue()
         if r:
-            if len(r) > len(length):
+            if length > -1 and len(r) > length:
                  self.reply = io.BytesIO(r[length:])
                  r = r[:length]
             else:
@@ -653,7 +658,7 @@ class DceRpcProcessor:
         return r
 
 
-        
+         
 # *************************************************************************
 # *                 WINDOWS DCE/RPC FUNCTIONS                             *
 # *************************************************************************
@@ -729,7 +734,7 @@ TYPE_NT=         0x1000
 TYPE_SERVER_NT=  0x8000
 TYPE_PRINT=      0x0200
 
-@register('svrsvc', 21)
+@register('srvsvc', 21)
 def NetSvrGetInfo(sys_data, avatar, payload):
     p, _ = unpack(NetSvrInfoInput, payload)
     if p.level == 100:
@@ -800,7 +805,7 @@ class NetShareEnumEnd:
     werror = medium(0)
     
     
-@register('svrsvc', 15)
+@register('srvsvc', 15)
 def NetShareEnumAll(sys_data, avatar, payload):
     i, offset = unpack(NetShareEnumInput, payload)
     if i.level == 1:
@@ -809,7 +814,7 @@ def NetShareEnumAll(sys_data, avatar, payload):
             shares = shares[:MAX_SHARES]
             shares = [(n, SHARES_T[id(t)], r) for n, t, r in shares]
             shares.append(("IPC$", SHARE_IPC | SHARE_SPECIAL_MASK, "Internal IPC"))
-            nser = NetShareEnumResp(count1=len(shares), count2=len(shares))
+            nser = NetShareEnumResp(count1=len(shares), count2=len(shares), level=1)
             resp = base.pack(nser)
             for _, t, _ in shares:
                 resp += base.pack(NetShareEnumArray(share_type=t))
@@ -842,7 +847,7 @@ class NetShareInfo1:
     remark = wchar()
     werror = medium(0)
     
-@register('svrsvc', 16)
+@register('srvsvc', 16)
 def NetShareGetInfo(sys_data, avatar, payload):
     i, _ = unpack(NetShareGetInfoInput, payload)
     if i.level == 1:
