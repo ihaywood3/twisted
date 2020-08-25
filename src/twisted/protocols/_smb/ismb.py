@@ -9,7 +9,10 @@ from zope.interface import Interface, Attribute
 
 from collections import namedtuple
 
-StatData = namedtuple('StatData','size ctime mtime atime read_only system hidden archive dir')
+StatData = namedtuple(
+    'StatData', 'size ctime mtime atime read_only system hidden archive dir')
+
+
 
 class NoSuchShare(Exception):
     pass
@@ -64,66 +67,62 @@ class IIPC(Interface):
     """
     A share representing a interprocess communication (IPC) service
     """
-    
     def open(name):
         """
-        open a named pipes
-        
+        open a named pipe
+
         @param name: name of the pipe
         @type name: L{str}
-        
+
         @rtype: L{IPipe}
         """
-        
+
+
+
 class IPipe(Interface):
     """
     a single named pipe
     """
-    
     def dataReceived(data):
         """
         data received (written to) the pipe
-        
+
         @param data: the data written
         @type data: L{bytes}
         """
-        
+
     def dataAvailable(length):
         """
         returns data immediately available for reading, if no data returns
         b''
-        
+
         B{does not block and not allowed to return a L{defer.Deferred}}
-        
+
         @param length: maximum length of returned data
         @type length: L{int}
-        
+
         @rtype: L{bytes}
         """
-        
+
     def fileClosed():
         """
         remote end has closed the pipe
-        
-        @rtype: None 
+
+        @rtype: None
         """
-    
-        
+
     closed = Attribute("flag, True if pipe closed locally")
 
     def fileFlushed():
-       """
+        """
        remote end wants to flush
-       
+
        @rtype: None
        """
-       
+
     def stat():
-       """
+        """
        return stat data for the pipe
-       
+
        @rtype: L{StatData}
        """
-
-
-        

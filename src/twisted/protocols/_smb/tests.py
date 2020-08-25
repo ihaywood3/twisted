@@ -9,7 +9,6 @@ import re
 import attr
 import uuid
 
-
 from twisted.protocols._smb import base, core, security_blob, ntlm, dcerpc
 from twisted.protocols._smb.ismb import (ISMBServer, IFilesystem, NoSuchShare)
 
@@ -195,32 +194,38 @@ class TestSecurity(unittest.TestCase):
             manager.receiveToken(b"NTLMSSP\x00\xFF\0\0\0invalid message" +
                                  b"type                             ")
 
-DCERPC_BIND=b'\x05\x00\x0b\x03\x10\x00\x00\x00\xa0\x00\x00\x00\x02\x00\x00' \
-b'\x00\xb8\x10\xb8\x10\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x01\x00\x98' \
-b'\xd0\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00\x00\x00\x04]\x88\x8a\xeb' \
-b'\x1c\xc9\x11\x9f\xe8\x08\x00+\x10H`\x02\x00\x00\x00\x01\x00\x01\x00\x98' \
-b'\xd0\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00\x00\x003\x05qq\xba\xbe7' \
-b'I\x83\x19\xb5\xdb\xef\x9c\xcc6\x01\x00\x00\x00\x02\x00\x01\x00\x98\xd0' \
-b'\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00\x00\x00,\x1c\xb7l\x12\x98' \
-b'@E\x03\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00'
 
-DCERPC_REQUEST=b'\x05\x00\x00\x03\x10\x00\x00\x00P\x00\x00\x00\x02\x00\x00\x00' \
-b'8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x11\x00\x00\x00\x00\x00\x00' \
-b'\x00\x11\x00\x00\x00\\\x00\\\x001\x009\x002\x00.\x001\x006\x008\x00.\x001' \
-b'\x007\x008\x00.\x003\x009\x00\x00\x00\x00\x00d\x00\x00\x00'
+
+DCERPC_BIND = b'\x05\x00\x0b\x03\x10\x00\x00\x00\xa0\x00\x00\x00\x02\x00' \
+    b'\x00\x00\xb8\x10\xb8\x10\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x01' \
+    b'\x00\x98\xd0\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00\x00\x00\x04]' \
+    b'\x88\x8a\xeb\x1c\xc9\x11\x9f\xe8\x08\x00+\x10H`\x02\x00\x00\x00\x01' \
+    b'\x00\x01\x00\x98\xd0\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00\x00' \
+    b'\x003\x05qq\xba\xbe7I\x83\x19\xb5\xdb\xef\x9c\xcc6\x01\x00\x00\x00' \
+    b'\x02\x00\x01\x00\x98\xd0\xffk\x12\xa1\x106\x983F\xc3\xf8~4Z\x01\x00' \
+    b'\x00\x00,\x1c\xb7l\x12\x98@E\x03\x00\x00\x00\x00\x00\x00\x00\x01\x00' \
+    b'\x00\x00'
+
+DCERPC_REQUEST = b'\x05\x00\x00\x03\x10\x00\x00\x00P\x00\x00\x00\x02\x00' \
+    b'\x00\x008\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x11\x00\x00\x00' \
+    b'\x00\x00\x00\x00\x11\x00\x00\x00\\\x00\\\x001\x009\x002\x00.\x001\x00' \
+    b'6\x008\x00.\x001\x007\x008\x00.\x003\x009\x00\x00\x00\x00\x00d\x00' \
+    b'\x00\x00'
+
+
 
 class TestDcerpc(unittest.TestCase):
-
     def test_bind(self):
         pipe = dcerpc.DceRpcProcessor(None, None, "test")
         pipe.dataReceived(DCERPC_BIND)
         abstract_uuid, abstract_version = list(pipe.contexts.values())[0]
-        self.assertEqual(abstract_uuid, uuid.UUID('{6BFFD098-A112-3610-9833-46C3F87E345A}'))
+        self.assertEqual(abstract_uuid,
+                         uuid.UUID('{6BFFD098-A112-3610-9833-46C3F87E345A}'))
         self.assertEqual(abstract_version, 1)
-        
+
     def test_request(self):
         pipe = dcerpc.DceRpcProcessor("fake sys_data", "fake avatar", "test")
-        
+
         def cb_test(sys_data, avatar, payload):
             p, _ = dcerpc.unpack(dcerpc.WkstaInfoInput, payload)
             self.assertEqual(sys_data, "fake sys_data")
@@ -228,14 +233,13 @@ class TestDcerpc(unittest.TestCase):
             self.assertEqual(p.level, 100)
             self.assertEqual(p.server, "\\\\192.168.178.39")
             return b'some data'
-            
+
         func = dcerpc.register("test", 0)
-        func (cb_test)
+        func(cb_test)
         pipe.dataReceived(DCERPC_REQUEST)
-        
-        
-        
-         
+
+
+
 @implementer(IFilesystem)
 class TestDisc:
     pass
@@ -260,6 +264,8 @@ class TestRealm:
     def requestAvatar(self, avatarId, mind, interfaces):
         log.debug("avatarId={a!r} mind={m!r}", a=avatarId, m=mind)
         return (ISMBServer, TestAvatar(), lambda: None)
+
+
 
 class ChatNotFinished(Exception):
     pass
