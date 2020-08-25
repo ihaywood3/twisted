@@ -7,11 +7,6 @@ Various interfaces for realms, avatars and related objects
 
 from zope.interface import Interface, Attribute
 
-from collections import namedtuple
-
-StatData = namedtuple(
-    'StatData', 'size ctime mtime atime read_only system hidden archive dir')
-
 
 
 class NoSuchShare(Exception):
@@ -44,7 +39,7 @@ class ISMBServer(Interface):
         Note servers are free to have different lists for different users
         and have "silent" shares that don't appear in list
 
-        @rtype: L{list} of L{str}
+        @return: L{list} of L{tuple}: (share, interface, description)
         """
 
 
@@ -112,17 +107,3 @@ class IPipe(Interface):
         """
 
     closed = Attribute("flag, True if pipe closed locally")
-
-    def fileFlushed():
-        """
-       remote end wants to flush
-
-       @rtype: None
-       """
-
-    def stat():
-        """
-       return stat data for the pipe
-
-       @rtype: L{StatData}
-       """
