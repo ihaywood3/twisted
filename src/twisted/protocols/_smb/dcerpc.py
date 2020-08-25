@@ -73,7 +73,7 @@ def register(pipe, opcode):
     It is responsible for marshalling/unmarshalling its own
     data frames, but see L{pack} / L{unpack}
 
-    @param pipe: the pipe name: C{svrsvc}, C{wkssvc}, I{et al.}
+    @param pipe: the pipe name: C{srvsvc}, C{wkssvc}, I{et al.}
     @type pipe: L{str}
     @param opcode: the function's opcode (see specs for that interface)
     @type opcode: L{int}
@@ -88,20 +88,17 @@ def _register(f, pipe, opcode):
     RPC_FUNCTIONS[pipe][opcode] = f
     return f
 
-DCE_ASCII="A"
-WCHAR="W"
 
-def dce_ascii(default=""):
-    """a DCE/RPC ASCII string"""
-    return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: DCE_ASCII})
+WCHAR="W" 
+
 
 def wchar(default=""):
     """a Windows "wide char" (UTF-16) string"""
     return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: WCHAR})
 
 def referent():
-    """ a DCE/RPC "referent",as best as I can read the spec its an
-    attempt to represent the semantics of a C piinter on the wire
+    """ a DCE/RPC "referent",as best as I can read the spec is an
+    attempt to represent the semantics of a C pointer on the wire
     Can largely be ignored for our purposes
     """
     return attr.ib(factory=_referent_factory, type=int, metadata={base.SMB_METADATA: "I"})
@@ -121,9 +118,8 @@ def resetReferents():
     
 def unpack(cls, data, offset=0):
     """
-    L{base.unpack} is  extended to support two
-    nonstandard struct types
-    - C{A} a DCE/RPC ASCII string
+    L{base.unpack} is  extended to support one exrra
+    nonstandard struct type
     - C{W} a Windows "wide char" (UTF-16) string
     
     @rtype: C{tuple}: (object, offset)
@@ -133,9 +129,7 @@ def unpack(cls, data, offset=0):
     """
     values = {}
     for f in base.smb_fields(cls):
-        if f.metadata[base.SMB_METADATA] == DCE_ASCII:
-            values[f.name], offset = _unpackDceAscii(data, offset)
-        elif f.metadata[base.SMB_METADATA] == WCHAR:
+        if f.metadata[base.SMB_METADATA] == WCHAR:
             values[f.name], offset = _unpackWchar(data, offset)
         else:        
             fmt = "<" + f.metadata[base.SMB_METADATA]
@@ -146,14 +140,6 @@ def unpack(cls, data, offset=0):
     
 _3ints = struct.Struct("<III")
    
-def _unpackDceAscii(data, offset):
-    max_count, offset2, actual_count = _3ints.unpack_from(data, offset)
-    offset += _3ints.size
-    s = data[offset + offset2:offset + actual_count - 1]
-    assert data[offset + actual_count - 1] == 0
-    offset += actual_count
-    return (s.decode('us-ascii', 'replace'), offset)
-
 def _unpackWchar(data, offset):
     max_count, offset2, actual_count = _3ints.unpack_from(data, offset)
     offset += _3ints.size
@@ -168,7 +154,7 @@ def _unpackWchar(data, offset):
 
 def pack(obj, caller_bio=None):
     """
-    L{base.pack} is extended to support L{wchar} and L{dce_ascii}
+    L{base.pack} is extended to support L{wchar}
     
     @param caller_bio: a I/O buffer to write the result to
     @type caller_bio: L{io.BytesIO}
@@ -186,12 +172,7 @@ def pack(obj, caller_bio=None):
     for f in base.smb_fields(type(obj)):
         t = f.metadata[base.SMB_METADATA]
         n = f.name
-        if t == DCE_ASCII:
-            v = getattr(obj, n, "")
-            v = v.encode("us-ascii") + b'\0'
-            bio.write(_3ints.pack(len(v), 0, len(v)))
-            bio.write(v)
-        elif t == WCHAR:
+        if t == WCHAR:
             v = getattr(obj, n, "")
             l = len(v) + 1
             v = v.encode("utf-16le")
