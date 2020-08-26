@@ -148,10 +148,10 @@ class BlobManager(object):
     @property
     def credential(self):
         return self.manager.credential
-        
+
     @property
     def secret_key(self):
-        return self.manager.ersk  
+        return self.manager.ersk
 
 
 

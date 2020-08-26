@@ -312,14 +312,13 @@ Flags           {flags!r}""",
         else:
             target = b''
         if 'NegotiateTargetInfo' in self.flags:
-            targetinfo = avpair(
-                AV_COMPUTER_NAME,
-                hostname) + avpair(
-                    AV_DOMAIN_NAME, self.sys_data.domain) + avpair(
-                        AV_DNS_COMPUTER_NAME, self.sys_data.fqdn) + avpair(
-                            AV_DNS_DOMAIN_NAME, b'\0\0') + avpair(
-                                AV_TIMESTAMP,
-                                struct.pack("<Q", base.unixToNTTime(
+            targetinfo = avpair(AV_COMPUTER_NAME, hostname) + avpair(
+                AV_DOMAIN_NAME, self.sys_data.domain) + avpair(
+                    AV_DNS_COMPUTER_NAME, self.sys_data.fqdn) + avpair(
+                        AV_DNS_DOMAIN_NAME, b'\0\0') + avpair(
+                            AV_TIMESTAMP,
+                            struct.pack(
+                                "<Q", base.unixToNTTime(
                                     base.wiggleTime()))) + avpair(AV_EOL, b'')
         else:
             targetinfo = b''

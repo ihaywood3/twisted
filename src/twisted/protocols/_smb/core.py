@@ -44,8 +44,7 @@ COMMANDS = [('negotiate', types.NegReq, types.NegResp),
             ('query_info', types.QueryInfoReq, types.QueryInfoResp),
             ('set_info', types.SetInfoReq, types.SetInfoResp),
             ('oplock_break', types.OplockBreakAck, types.OplockBreakAck)]
-            
-            
+
 
 
 def packetReceived(packet):
@@ -147,7 +146,7 @@ signature       {sig}""",
             except base.SMBError as e:
                 log.error("SMB error: {e}", e=str(e))
                 errorResponse(packet, e.ntstatus)
-            except:
+            except BaseException:
                 log.failure("in {cmd}", cmd=COMMANDS[packet.hdr.command][0])
                 errorResponse(packet, types.NTStatus.UNSUCCESSFUL)
         else:
@@ -323,8 +322,8 @@ Prev. session ID 0x{pid:016x}""",
             d = packet.ctx['portal'].login(
                 blob_manager.credential,
                 types.SMBMind(packet.body.prev_session_id,
-                        blob_manager.credential.domain, packet.ctx['addr']),
-                ISMBServer)
+                              blob_manager.credential.domain,
+                              packet.ctx['addr']), ISMBServer)
 
             def cb_login(t):
                 _, packet.ctx['avatar'], packet.ctx['logout_thunk'] = t
@@ -336,7 +335,8 @@ Prev. session ID 0x{pid:016x}""",
             def eb_login(failure):
                 log.debug(failure.getTraceback())
                 blob = blob_manager.generateAuthResponseBlob(False)
-                sessionSetupResponse(packet, blob, types.NTStatus.LOGON_FAILURE)
+                sessionSetupResponse(packet, blob,
+                                     types.NTStatus.LOGON_FAILURE)
 
             d.addCallback(cb_login)
             d.addErrback(eb_login)
@@ -366,10 +366,12 @@ def sessionSetupResponse(packet, blob, ntstatus):
     packet.data = base.pack(resp) + blob
     sendHeader(packet, 'session_setup', ntstatus)
 
+
+
 def eb_common(failure, packet):
     """
     utility errback used by a number of different handlers
-    
+
     @param failure: the active Failure
     @param packet: the current packet
     @type packet: L{base.SMBPacket}
@@ -384,10 +386,12 @@ def eb_common(failure, packet):
         errorResponse(packet, types.NTStatus.UNSUCCESSFUL)
 
 
+
 def smb_logoff(packet, resp_type):
     def cb_logoff(_):
         packet.data = base.pack(resp_type())
         sendHeader(packet)
+
     logout_thunk = packet.ctx.get('logout_thunk')
     if logout_thunk:
         d = maybeDeferred(logout_thunk)
@@ -396,10 +400,13 @@ def smb_logoff(packet, resp_type):
     else:
         cb_logoff(None)
 
+
+
 def smb_echo(packet, resp_type):
     packet.data = base.pack(resp_type())
     sendHeader(packet)
-   
+
+
 
 def smb_tree_connect(packet, resp_type):
     avatar = packet.ctx.get('avatar')
@@ -419,11 +426,11 @@ Path   {path!r}
               path=path)
     path = path.split("\\")[-1]
     if path == 'IPC$':
-        d = succeed(dcerpc.BasicIPC(packet.ctx['sys_data'], packet.ctx['avatar']))
+        d = succeed(
+            dcerpc.BasicIPC(packet.ctx['sys_data'], packet.ctx['avatar']))
     else:
         d = maybeDeferred(avatar.getShare, path)
 
-  
     def cb_tree(share):
         resp = None
         if IFilesystem.providedBy(share):
@@ -432,32 +439,31 @@ Path   {path!r}
                 # FUTURE: select these values from share object
                 flags=types.SHAREFLAG_MANUAL_CACHING,
                 capabilities=0,
-                max_perms=(types.FILE_READ_DATA | types.FILE_WRITE_DATA
-                           | types.FILE_APPEND_DATA 
-                           #| FILE_WRITE_EA | FILE_READ_EA
-                           | types.FILE_DELETE_CHILD | types.FILE_EXECUTE
-                           | types.FILE_READ_ATTRIBUTES
-                           | types.FILE_WRITE_ATTRIBUTES
-                           | types.DELETE | types.READ_CONTROL | types.WRITE_DAC
-                           | types.WRITE_OWNER
-                           | types.SYNCHRONIZE))
+                max_perms=(
+                    types.FILE_READ_DATA | types.FILE_WRITE_DATA
+                    | types.FILE_APPEND_DATA
+                    # | FILE_WRITE_EA | FILE_READ_EA
+                    | types.FILE_DELETE_CHILD | types.FILE_EXECUTE
+                    | types.FILE_READ_ATTRIBUTES
+                    | types.FILE_WRITE_ATTRIBUTES
+                    | types.DELETE | types.READ_CONTROL | types.WRITE_DAC
+                    | types.WRITE_OWNER
+                    | types.SYNCHRONIZE))
         if IIPC.providedBy(share):
             assert resp is None, "share can only be one type"
             resp = resp_type(
                 share_type=types.SHARE_PIPE,
                 flags=0,
                 max_perms=(
-                    types.FILE_READ_DATA | 
-                    #types.FILE_WRITE_DATA | 
-                    #types.FILE_APPEND_DATA  |
+                    types.FILE_READ_DATA |
+                    # types.FILE_WRITE_DATA |
+                    # types.FILE_APPEND_DATA  |
                     types.FILE_READ_EA |
                     # FILE_WRITE_EA |
                     # FILE_DELETE_CHILD |
                     types.FILE_EXECUTE | types.FILE_READ_ATTRIBUTES |
                     # FILE_WRITE_ATTRIBUTES |
-                    types.DELETE | 
-                    types.READ_CONTROL |
-                    types.WRITE_DAC |
+                    types.DELETE | types.READ_CONTROL | types.WRITE_DAC |
                     # WRITE_OWNER |
                     types.SYNCHRONIZE))
         if IPrinter.providedBy(share):
@@ -467,8 +473,9 @@ Path   {path!r}
                 flags=0,
                 # FIXME need to check printer  max perms
                 max_perms=(
-                    types.FILE_READ_DATA | types.FILE_WRITE_DATA | types.FILE_APPEND_DATA |
-                    #| FILE_READ_EA |
+                    types.FILE_READ_DATA | types.FILE_WRITE_DATA
+                    | types.FILE_APPEND_DATA |
+                    # | FILE_READ_EA |
                     # FILE_WRITE_EA |
                     # FILE_DELETE_CHILD |
                     types.FILE_EXECUTE | types.FILE_READ_ATTRIBUTES |
@@ -495,6 +502,8 @@ def smb_tree_disconnect(packet, resp_type):
     packet.data = base.pack(resp_type())
     sendHeader(packet)
 
+
+
 def smb_create(packet, resp_type):
     avatar = packet.ctx.get('avatar')
     if avatar is None:
@@ -512,39 +521,40 @@ Path   {path!r}
 """,
               sz=packet.body.size,
               path=path)
-              
+
     def cb_create_final(s, file_id, action):
         resp = resp_type(file_size=s.end_of_file,
-                alloc_size=s.alloc_size,
-                oplock_level=types.OplockLevels.NoLock,
-                action=action,
-                file_id=file_id,
-                attributes=s.attributes,
-                ctime=s.ctime,
-                atime=s.atime,
-                wtime=s.wtime,
-                mtime=s.mtime,
-                ctx_offset=0)
+                         alloc_size=s.alloc_size,
+                         oplock_level=types.OplockLevels.NoLock,
+                         action=action,
+                         file_id=file_id,
+                         attributes=s.attributes,
+                         ctime=s.ctime,
+                         atime=s.atime,
+                         wtime=s.wtime,
+                         mtime=s.mtime,
+                         ctx_offset=0)
         packet.data = base.pack(resp)
         sendHeader(packet)
-        
-              
+
     if IIPC.providedBy(tree):
         d1 = maybeDeferred(tree.open, path)
- 
+
         def cb_create_ipc(pipe):
-            driver= shim.PipeShim(pipe)
+            driver = shim.PipeShim(pipe)
             file_id = uuid4()
             packet.ctx['files'][file_id] = driver
             # for pipes not a Deferred, but otherwise would be
             noi = driver.getFileNetworkOpenInformation()
             cb_create_final(noi, file_id, types.CreateAction.Opened)
- 
+
         d1.addCallback(cb_create_ipc)
         d1.addErrback(eb_common, packet)
     else:
         raise NotImplementedError()
-  
+
+
+
 def smb_close(packet, resp_type):
     fd = packet.ctx['files'][packet.body.file_id]
     log.debug("""
@@ -555,39 +565,41 @@ file id {file_id}
 flags   {flags}
 file    {fd!r}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    flags=packet.body.flags,
-    fd=fd)
- 
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              flags=packet.body.flags,
+              fd=fd)
+
     def cb_close(_, resp):
-       packet.data = base.pack(resp)
-       sendHeader(packet) 
-       del packet.ctx['files'][packet.body.file_id]
-     
+        packet.data = base.pack(resp)
+        sendHeader(packet)
+        del packet.ctx['files'][packet.body.file_id]
+
     def cb_close_stat(s):
         resp = resp_type(file_size=s.end_of_file,
-            alloc_size=s.alloc_size,
-            flags=types.CLOSE_FLAG_POSTQUERY_ATTRIB,
-            attributes=s.attributes,
-            ctime=s.ctime,
-            atime=s.atime,
-            wtime=s.wtime,
-            mtime=s.mtime)
+                         alloc_size=s.alloc_size,
+                         flags=types.CLOSE_FLAG_POSTQUERY_ATTRIB,
+                         attributes=s.attributes,
+                         ctime=s.ctime,
+                         atime=s.atime,
+                         wtime=s.wtime,
+                         mtime=s.mtime)
         d1 = fd.close()
         d1.addCallback(cb_close, resp)
-        d1.addErrback(lambda f: log.failure("in smb_close", f))      
-        
+        d1.addErrback(lambda f: log.failure("in smb_close", f))
+
     if packet.body.flags & types.CLOSE_FLAG_POSTQUERY_ATTRIB > 0:
         d2 = maybeDeferred(fd.getFileNetworkOpenInformation)
         d2.addCallback(cb_close_stat)
         d2.addErrback(eb_common, packet)
     else:
-        resp = resp_type() # everything's zero
+        resp = resp_type()  # everything's zero
         d3 = fd.close()
         d3.addCallback(cb_close, resp)
         d3.addErrback(lambda f: log.failure("in smb_close", f))
-   
+
+
+
 def smb_flush(packet, resp_type):
     fd = packet.ctx['files'][packet.body.file_id]
     log.debug("""
@@ -597,19 +609,20 @@ size    {sz}
 file id {file_id}
 file    {fd!r}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    fd=fd)
- 
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              fd=fd)
+
     def cb_flush(_):
-       packet.data = base.pack(resp_type())
-       sendHeader(packet) 
-          
+        packet.data = base.pack(resp_type())
+        sendHeader(packet)
+
     d = fd.flush()
     d.addCallback(cb_flush)
     d.addErrback(lambda f: log.failure("in smb_close", f))
-  
-                
+
+
+
 def smb_read(packet, resp_type):
     fd = packet.ctx['files'][packet.body.file_id]
     log.debug("""
@@ -622,35 +635,38 @@ length  {length}
 min     {min}
 file    {fd!r}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    offset=packet.body.offset,
-    length=packet.body.length,
-    min=packet.body.minimum_count,
-    fd=fd) 
-    
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              offset=packet.body.offset,
+              length=packet.body.length,
+              min=packet.body.minimum_count,
+              fd=fd)
+
     def cb_read(data):
         if len(data) < packet.body.minimum_count:
-            raise base.SMBError('below minimum_count', types.NTStatus.DATA_ERROR)
-        min_offset = base.calcsize(types.HeaderAsync) + base.calcsize(types.ReadResp)
+            raise base.SMBError('below minimum_count',
+                                types.NTStatus.DATA_ERROR)
+        min_offset = base.calcsize(types.HeaderAsync) + base.calcsize(
+            types.ReadResp)
         offset = max(min_offset, packet.body.padding)
         if offset > min_offset:
-            padding = b'\0'*(offset-min_offset)
+            padding = b'\0' * (offset - min_offset)
         else:
             padding = b''
-        resp = types.ReadResp(offset=offset,length=len(data))
+        resp = types.ReadResp(offset=offset, length=len(data))
         packet.data = base.pack(resp) + padding + data
         sendHeader(packet)
-   
+
     d = fd.read(packet.body.offset, packet.body.length)
     d.addCallback(cb_read)
     d.addErrback(eb_common, packet)
-   
-         
+
+
+
 def smb_write(packet, resp_type):
     fd = packet.ctx['files'][packet.body.file_id]
     do = packet.body.data_offset
-    data = packet.data[do:do+packet.body.length]
+    data = packet.data[do:do + packet.body.length]
     log.debug("""
 WRITE
 -----
@@ -662,26 +678,25 @@ flags   {flags:04x}
 file    {fd!r}
 data    {data!r}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    offset=packet.body.offset,
-    length=packet.body.length,
-    flags=packet.body.flags,
-    fd=fd,
-    data=data[:32]) 
-    
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              offset=packet.body.offset,
+              length=packet.body.length,
+              flags=packet.body.flags,
+              fd=fd,
+              data=data[:32])
+
     def cb_write(count):
         resp = resp_type(count=count)
         packet.data = base.pack(resp)
         sendHeader(packet)
-    
+
     d = fd.write(packet.body.offset, data)
     d.addCallback(cb_write)
     d.addErrback(eb_common, packet)
 
 
 
- 
 def smb_query_info(packet, resp_type):
     if packet.body.file_id == base.UUID_MAX:
         fd = None
@@ -691,23 +706,29 @@ def smb_query_info(packet, resp_type):
     try:
         info_type = types.InfoType(packet.body.info_type)
     except ValueError:
-        raise base.SMBError("invalid info_type", types.NTStatus.INVALID_PARAMETER)   
-    if info_type == types.InfoType.QUOTA:
-        raise base.SMBError("Quotas not supported", types.NTStatus.NOT_SUPPORTED)
-    elif info_type == types.InfoType.SECURITY:
-        raise base.SMBError('"security" not supported', types.NTStatus.NOT_SUPPORTED)
-    elif info_type == types.InfoType.FILE:
+        raise base.SMBError("invalid info_type",
+                            types.NTStatus.INVALID_PARAMETER)
+    if isinstance(info_type, types.InfoType.QUOTA):
+        raise base.SMBError("Quotas not supported",
+                            types.NTStatus.NOT_SUPPORTED)
+    elif isinstance(info_type, types.InfoType.SECURITY):
+        raise base.SMBError('"security" not supported',
+                            types.NTStatus.NOT_SUPPORTED)
+    elif isinstance(info_type, types.InfoType.FILE):
         try:
             info_class = types.InfoClassFiles(packet.body.info_class)
         except ValueError:
-            raise base.SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS)
-    elif info_type == types.InfoType.FILESYSTEM:
+            raise base.SMBError("info_class",
+                                types.NTStatus.INVALID_INFO_CLASS)
+    elif isinstance(info_type, types.InfoType.FILESYSTEM):
         try:
             info_class = types.InfoClassFileSystems(packet.body.info_class)
         except ValueError:
-            raise base.SMBError("info_class", types.NTStatus.INVALID_INFO_CLASS) 
+            raise base.SMBError("info_class",
+                                types.NTStatus.INVALID_INFO_CLASS)
     else:
-        raise base.SMBError("invalid info_type", types.NTStatus.INVALID_PARAMETER)
+        raise base.SMBError("invalid info_type",
+                            types.NTStatus.INVALID_PARAMETER)
     log.debug("""
 QUERY INFO
 ----------
@@ -719,14 +740,14 @@ type    {info_type}
 class   {info_class}
 output  {obl}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    flags=packet.body.flags,
-    fd=fd,
-    info_class=info_class,
-    info_type=info_type,
-    obl=packet.body.output_buffer_length) 
- 
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              flags=packet.body.flags,
+              fd=fd,
+              info_class=info_class,
+              info_type=info_type,
+              obl=packet.body.output_buffer_length)
+
     def cb_info(resp):
         if hasattr(resp, "extra"):
             extra = resp.extra
@@ -736,49 +757,54 @@ output  {obl}
         else:
             extra = b''
         data = base.pack(resp)
-        l = len(data) + len(extra)
-        if l > packet.body.output_buffer_length:
-            raise base.SMBError("output buffer too long",types.NTStatus.BUFFER_OVERFLOW)
-        packet.data = base.pack(resp_type(length=l)) + data + extra
-        sendHeader(packet)   
-    
-    func_name = 'get' + info_class.name    
+        ol = len(data) + len(extra)
+        if ol > packet.body.output_buffer_length:
+            raise base.SMBError("output buffer too long",
+                                types.NTStatus.BUFFER_OVERFLOW)
+        packet.data = base.pack(resp_type(length=ol)) + data + extra
+        sendHeader(packet)
+
+    func_name = 'get' + info_class.name
     try:
-        if info_type == types.InfoType.FILE:
+        if isinstance(info_type, types.InfoType.FILE):
             if fd is None:
-                raise base.SMBError("must have file_id for FILE info type", types.NTStatus.INVALID_PARAMETER)
+                raise base.SMBError("must have file_id for FILE info type",
+                                    types.NTStatus.INVALID_PARAMETER)
             func = getattr(fd, func_name)
         else:
-            func = getattr(tree, func_name) 
+            func = getattr(tree, func_name)
     except AttributeError:
-        raise base.SMBError("%s not available" % info_class.name, types.NTStatus.NOT_SUPPORTED)
+        raise base.SMBError("%s not available" % info_class.name,
+                            types.NTStatus.NOT_SUPPORTED)
     d = maybeDeferred(func)
     d.addCallback(cb_info)
-    d.addErrback(eb_common, packet)    
-   
+    d.addErrback(eb_common, packet)
+
+
+
 def smb_ioctl(packet, resp_type):
     # this is a minimal implementation to satisfy clients that insist on
     # trying to obtain DFS referrals
     if packet.body.file_id == base.UUID_MAX:
         fd = None
-    else:    
+    else:
         fd = packet.ctx['files'][packet.body.file_id]
     il = packet.body.input_length
     if il == 0:
         input_data = b''
     else:
         io = packet.body.input_offset
-        input_data = packet.data[io:io+il]
-        
+        input_data = packet.data[io:io + il]
+
     ol = packet.body.output_length
     if ol == 0:
         output_data = b''
     else:
         oo = packet.body.output_offset
-        output_data = packet.data[oo:oo+ol]
-    
+        output_data = packet.data[oo:oo + ol]
+
     ctl_code = types.Ioctl(packet.body.ctl_code)
-    
+
     log.debug("""
 IOCTL
 -----
@@ -792,49 +818,49 @@ output   {output_data!r}
 max input  {max_input_response}
 max output {max_output_response}
 """,
-    sz=packet.body.size,
-    file_id=packet.body.file_id,
-    flags=packet.body.flags,
-    fd=fd,
-    ctl_code=ctl_code,
-    max_output_response=packet.body.max_output_response,    
-    max_input_response=packet.body.max_input_response,
-    input_data=input_data[:32],
-    output_data=output_data[:32])
+              sz=packet.body.size,
+              file_id=packet.body.file_id,
+              flags=packet.body.flags,
+              fd=fd,
+              ctl_code=ctl_code,
+              max_output_response=packet.body.max_output_response,
+              max_input_response=packet.body.max_input_response,
+              input_data=input_data[:32],
+              output_data=output_data[:32])
 
     def cb_ioctl(output_data):
         oo = base.calcsize(types.HeaderAsync) + base.calcsize(resp_type)
         ol = len(output_data)
         if ol > packet.body.max_output_response:
-            raise base.SMBError("response too large", types.NTStatus.BUFFER_OVERFLOW)
-        resp = resp_type(
-            ctl_code=packet.body.ctl_code,
-            file_id=packet.body.file_id,
-            input_offset=oo,
-            output_offset=oo,
-            output_length=ol)
+            raise base.SMBError("response too large",
+                                types.NTStatus.BUFFER_OVERFLOW)
+        resp = resp_type(ctl_code=packet.body.ctl_code,
+                         file_id=packet.body.file_id,
+                         input_offset=oo,
+                         output_offset=oo,
+                         output_length=ol)
         packet.data = base.pack(resp) + output_data
-        sendHeader(packet)     
-        
+        sendHeader(packet)
+
     if ctl_code == types.Ioctl.FSCTL_DFS_GET_REFERRALS or \
-        ctl_code == types.Ioctl.FSCTL_DFS_GET_REFERRALS_EX:
+            ctl_code == types.Ioctl.FSCTL_DFS_GET_REFERRALS_EX:
         raise base.SMBError("no DFS", types.NTStatus.NOT_FOUND)
-    elif ctl_code == types.Ioctl.FSCTL_PIPE_TRANSCEIVE: 
+    elif ctl_code == types.Ioctl.FSCTL_PIPE_TRANSCEIVE:
         if fd is None:
-            raise base.SMBError("no valid file id", types.NTStatus.INVALID_DEVICE_REQUEST)
+            raise base.SMBError("no valid file id",
+                                types.NTStatus.INVALID_DEVICE_REQUEST)
         if not isinstance(fd, shim.PipeShim):
-            raise base.SMBError("not a pipe", types.NTStatus.INVALID_DEVICE_REQUEST)
+            raise base.SMBError("not a pipe",
+                                types.NTStatus.INVALID_DEVICE_REQUEST)
         d = fd.pipeTranscieve(input_data)
         d.addCallback(cb_ioctl)
-        d.addErrback(eb_common, packet)    
+        d.addErrback(eb_common, packet)
     else:
-        raise base.SMBError("fsctl %r not supported" % ctl_code, types.NTStatus.INVALID_DEVICE_REQUEST)
-        
-        
-        
-        
-        
-        
+        raise base.SMBError("fsctl %r not supported" % ctl_code,
+                            types.NTStatus.INVALID_DEVICE_REQUEST)
+
+
+
 class SMBFactory(protocol.Factory):
     """
     Factory for SMB servers
@@ -846,7 +872,7 @@ class SMBFactory(protocol.Factory):
 
         @param domain: the server's Windows/NetBIOS domain name
         @type domain: L{str}
-        
+
         @param fake: whether to report fake or real system data
         @type fake: L{bool}
         """
@@ -860,8 +886,8 @@ class SMBFactory(protocol.Factory):
             boot_time = base.wiggleTime()
             fqdn = socket.getfqdn()
             server_uuid = base.getMachineUUID()
-        self.sys_data = types.SystemData(server_uuid, boot_time, domain, fqdn, fake)
-         
+        self.sys_data = types.SystemData(server_uuid, boot_time, domain, fqdn,
+                                         fake)
 
     def buildProtocol(self, addr):
         log.debug("new SMB connection from {addr!r}", addr=addr)

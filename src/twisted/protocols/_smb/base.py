@@ -25,6 +25,7 @@ SERVER_VERSION = (6, 1, 1)
 # major version 6.1 = Vista, roughly speaking what this emulates
 
 
+
 class SMBError(Exception):
     """SMB specific errors
     """
@@ -34,9 +35,11 @@ class SMBError(Exception):
 
     def __str__(self):
         if self.ntstatus:
-            return "%s %s (0x%08x)" % (self.msg, self.ntstatus.name, self.ntstatus.value)
+            return "%s %s (0x%08x)" % (self.msg, self.ntstatus.name,
+                                       self.ntstatus.value)
         else:
             return self.msg
+
 
 
 def unixToNTTime(epoch):
@@ -53,27 +56,33 @@ def unixToNTTime(epoch):
     """
     return int(epoch * 10000000.0) + 116444736000000000
 
-WIGGLE=1.0
+
+
+WIGGLE = 1.0
+
+
 
 def wiggleTime():
     """
     report the system time (as per L{time.time}() with a deliberate
     error ("wiggle") . This is to avoid timing attacks when the server is asked
     to report clock time.
-    
+
     @rtype: L{int}
     """
-    return time.time()+((random.random()-0.5)*WIGGLE)
+    return time.time() + ((random.random() - 0.5) * WIGGLE)
 
 
-LINUX_MACHINE_ID_FILE="/var/lib/dbus/machine-id"
-MACOS_MACHINE_ID_CMD="ioreg -rd1 -c IOPlatformExpertDevice"
+
+LINUX_MACHINE_ID_FILE = "/var/lib/dbus/machine-id"
+MACOS_MACHINE_ID_CMD = "ioreg -rd1 -c IOPlatformExpertDevice"
+
 
 
 def getMachineUUID():
     """
     get a unique UUID for this machine, but constant across boots
-   
+
     @rtype: L{uuid.UUID}
     """
     if os.access(LINUX_MACHINE_ID_FILE, os.R_OK):
@@ -82,18 +91,22 @@ def getMachineUUID():
     if platform.system() == "Darwin":
         try:
             pro = subprocess.run(MACOS_MACHINE_ID_CMD,
-                shell=True,
-                stdout=subprocess.PIPE,
-                universal_newlines=True)
-            m = re.search("[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}", pro.stdout)
+                                 shell=True,
+                                 stdout=subprocess.PIPE,
+                                 universal_newlines=True)
+            m = re.search(
+                "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
+                pro.stdout)
             if m:
                 return uuid_mod.UUID(m.group(0))
-        except:
+        except BaseException:
             log.failure("in macos machine id")
-    return uuid_mod.uuid5(uuid_mod.NAMESPACE_URL, 'http://twisted.org/smb_server/%012x' % uuid_mod.getnode())
-    
-   
-        
+    return uuid_mod.uuid5(
+        uuid_mod.NAMESPACE_URL,
+        'http://twisted.org/smb_server/%012x' % uuid_mod.getnode())
+
+
+
 SMB_METADATA = '__smb_metadata'
 
 
@@ -185,7 +198,8 @@ def octets(length=None, default=None, locked=False):
                    validator=default_only if locked else None)
 
 
-UUID_MAX =  uuid_mod.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+
+UUID_MAX = uuid_mod.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
 NULL_UUID = uuid_mod.UUID("00000000-0000-0000-0000-000000000000")
 NEW_UUID = attr.Factory(uuid_mod.uuid4)
 
