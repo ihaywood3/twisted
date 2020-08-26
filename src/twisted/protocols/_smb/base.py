@@ -8,12 +8,10 @@ base classes for SMB networking
 import struct
 import attr
 import uuid as uuid_mod
-import os
-import platform
 import time
 import random
-import re
 import enum
+import os
 from twisted.internet import protocol
 from twisted.logger import Logger
 from twisted.python.randbytes import secureRandom

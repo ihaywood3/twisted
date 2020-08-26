@@ -223,9 +223,6 @@ PTYPES = [
 RPC_VERSION = 5
 RPC_VERSION_MINOR = 1
 
-SERVER_VERSION = 6
-SERVER_VERSION_MINOR = 1
-
 PFC_FIRST_FRAG = 0x01
 PFC_LAST_FRAG = 0x02
 PFC_PENDING_CANCEL = 0x04
@@ -746,8 +743,8 @@ class WkstaInfo100:
         default=500)  # 500= Windows any other value will upset clients
     ref2 = referent()
     ref3 = referent()
-    vers_major = medium(default=SERVER_VERSION)
-    vers_minor = medium(default=SERVER_VERSION_MINOR)
+    vers_major = medium(default=base.SERVER_VERSION[0])
+    vers_minor = medium(default=base.SERVER_VERSION[1])
     computername = wchar()
     langroup = wchar()
     werror = medium(0)
@@ -784,8 +781,8 @@ class NetSvrInfo101:
     platform_id = medium(
         default=500)  # 500= Windows any other value will upset clients
     ref2 = referent()
-    vers_major = medium(default=SERVER_VERSION)
-    vers_minor = medium(default=SERVER_VERSION_MINOR)
+    vers_major = medium(default=base.SERVER_VERSION[0])
+    vers_minor = medium(default=base.SERVER_VERSION[1])
     server_type = medium()
     ref3 = referent()
     name = wchar()

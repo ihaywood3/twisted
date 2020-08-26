@@ -9,7 +9,8 @@ import re
 import attr
 import uuid
 
-from twisted.protocols._smb import base, core, security_blob, ntlm, dcerpc
+from twisted.protocols._smb import (base, core, security_blob, ntlm,
+                                    dcerpc, types)
 from twisted.protocols._smb.ismb import (ISMBServer, IFilesystem, NoSuchShare)
 
 from twisted.cred import portal, checkers, credentials
@@ -156,12 +157,13 @@ AUTH_PACKET = b'\xa1\x82\x01\xd30\x82\x01\xcf\xa0\x03\n\x01\x01\xa2\x82' \
     b'\x95_\x1e4\x12?\x07x\x00\x00\x00\x00'
 
 CHALLENGE = b'&z\xd3>Cu\xdd+'
+SYS_DATA = types.SystemData(base.NULL_UUID, 0, "DOMAIN", "localhost", False)
 
 
 
 class TestSecurity(unittest.TestCase):
     def test_negotiate(self):
-        blob_manager = security_blob.BlobManager("DOMAIN")
+        blob_manager = security_blob.BlobManager(SYS_DATA)
         blob_manager.receiveInitialBlob(NEG_PACKET)
         flags = {
             'Negotiate128', 'TargetTypeServer', 'RequestTarget',
@@ -174,7 +176,7 @@ class TestSecurity(unittest.TestCase):
         self.assertIsNone(blob_manager.manager.workstation)
 
     def test_auth(self):
-        blob_manager = security_blob.BlobManager("DOMAIN")
+        blob_manager = security_blob.BlobManager(SYS_DATA)
         blob_manager.receiveInitialBlob(NEG_PACKET)
         blob_manager.generateChallengeBlob()
         blob_manager.manager.challenge = CHALLENGE
@@ -185,7 +187,7 @@ class TestSecurity(unittest.TestCase):
         self.assertFalse(blob_manager.credential.checkPassword("wrong"))
 
     def test_invalid(self):
-        manager = ntlm.NTLMManager("DOMAIN")
+        manager = ntlm.NTLMManager(SYS_DATA)
         with self.assertRaises(base.SMBError):
             manager.receiveToken(b"I'm too short")
         with self.assertRaises(AssertionError):
@@ -329,7 +331,7 @@ def spawn(chat, args, ignoreRCode=False, usePTY=True):
 
 
 
-TESTPORT = 445
+TESTPORT = 5445
 TESTUSER = "user"
 TESTPASSWORD = "password"
 
