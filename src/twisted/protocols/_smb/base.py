@@ -8,7 +8,6 @@ base classes for SMB networking
 import struct
 import attr
 import uuid as uuid_mod
-import subprocess
 import os
 import platform
 import time
@@ -75,7 +74,6 @@ def wiggleTime():
 
 
 LINUX_MACHINE_ID_FILE = "/var/lib/dbus/machine-id"
-MACOS_MACHINE_ID_CMD = "ioreg -rd1 -c IOPlatformExpertDevice"
 
 
 
@@ -88,19 +86,6 @@ def getMachineUUID():
     if os.access(LINUX_MACHINE_ID_FILE, os.R_OK):
         with open(LINUX_MACHINE_ID_FILE, "r") as fd:
             return uuid_mod.UUID(fd.read()[:32])
-    if platform.system() == "Darwin":
-        try:
-            pro = subprocess.run(MACOS_MACHINE_ID_CMD,
-                                 shell=True,
-                                 stdout=subprocess.PIPE,
-                                 universal_newlines=True)
-            m = re.search(
-                "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
-                pro.stdout)
-            if m:
-                return uuid_mod.UUID(m.group(0))
-        except BaseException:
-            log.failure("in macos machine id")
     return uuid_mod.uuid5(
         uuid_mod.NAMESPACE_URL,
         'http://twisted.org/smb_server/%012x' % uuid_mod.getnode())
