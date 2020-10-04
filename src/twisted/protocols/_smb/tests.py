@@ -8,6 +8,8 @@ import socket
 import re
 import attr
 import uuid
+import os
+import unittest as python_unittest
 
 from twisted.protocols._smb import base, core, security_blob, ntlm, dcerpc
 from twisted.protocols._smb.ismb import ISMBServer, IFilesystem, NoSuchShare
@@ -267,10 +269,12 @@ class TestAvatar:
     def listShares(self):
         return ["share"]
 
+    session_id = 0
+
 
 @implementer(portal.IRealm)
 class TestRealm:
-    def requestAvatar(self, avatarId, mind, interfaces):
+    def requestAvatar(self, avatarId, mind, *interfaces):
         log.debug("avatarId={a!r} mind={m!r}", a=avatarId, m=mind)
         return (ISMBServer, TestAvatar(), lambda: None)
 
@@ -326,8 +330,10 @@ def spawn(chat, args, ignoreRCode=False, usePTY=True):
 
 
 TESTPORT = 5445
+SMBCLIENT = "/usr/bin/smbclient"
 
 
+@python_unittest.skipUnless(os.access(SMBCLIENT, os.X_OK), "smbclient unavailable")
 class SambaClientTests(unittest.TestCase):
     def setUp(self):
         # Start the server
@@ -346,7 +352,7 @@ class SambaClientTests(unittest.TestCase):
         return spawn(
             chat,
             [
-                "/usr/bin/smbclient",
+                SMBCLIENT,
                 "\\\\%s\\share" % socket.gethostname(),
                 self.password,
                 "-m",

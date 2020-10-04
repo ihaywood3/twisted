@@ -9,34 +9,44 @@ import errno
 from array import array
 from struct import pack
 from socket import AF_INET6, AF_INET, SOCK_STREAM, SOL_SOCKET, error, socket
+from unittest import skipIf
 
 from zope.interface.verify import verifyClass
 
-from twisted.trial import unittest
+from twisted.trial.unittest import TestCase
 from twisted.python.log import msg
 from twisted.internet.interfaces import IPushProducer
 
 try:
     from twisted.internet.iocpreactor import iocpsupport as _iocp, tcp, udp
-    from twisted.internet.iocpreactor.reactor import IOCPReactor, EVENTS_PER_LOOP, KEY_NORMAL
+    from twisted.internet.iocpreactor.reactor import (
+        IOCPReactor,
+        EVENTS_PER_LOOP,
+        KEY_NORMAL,
+    )
     from twisted.internet.iocpreactor.interfaces import IReadWriteHandle
     from twisted.internet.iocpreactor.const import SO_UPDATE_ACCEPT_CONTEXT
     from twisted.internet.iocpreactor.abstract import FileHandle
 except ImportError:
-    skip = 'This test only applies to IOCPReactor'
+    skip = "This test only applies to IOCPReactor"
 
 try:
     socket(AF_INET6, SOCK_STREAM).close()
 except error as e:
-    ipv6Skip = str(e)
-else:
-    ipv6Skip = None
+    ipv6Skip = True
+    ipv6SkipReason = str(e)
 
-class SupportTests(unittest.TestCase):
+else:
+    ipv6Skip = False
+    ipv6SkipReason = ""
+
+
+class SupportTests(TestCase):
     """
     Tests for L{twisted.internet.iocpreactor.iocpsupport}, low-level reactor
     implementation helpers.
     """
+
     def _acceptAddressTest(self, family, localhost):
         """
         Create a C{SOCK_STREAM} connection to localhost using a socket with an
@@ -47,7 +57,7 @@ class SupportTests(unittest.TestCase):
         msg("family = %r" % (family,))
         port = socket(family, SOCK_STREAM)
         self.addCleanup(port.close)
-        port.bind(('', 0))
+        port.bind(("", 0))
         port.listen(1)
         client = socket(family, SOCK_STREAM)
         self.addCleanup(client.close)
@@ -59,15 +69,15 @@ class SupportTests(unittest.TestCase):
 
         server = socket(family, SOCK_STREAM)
         self.addCleanup(server.close)
-        buff = array('B', b'\0' * 256)
-        self.assertEqual(
-            0, _iocp.accept(port.fileno(), server.fileno(), buff, None))
+        buff = array("B", b"\0" * 256)
+        self.assertEqual(0, _iocp.accept(port.fileno(), server.fileno(), buff, None))
         server.setsockopt(
-            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, pack('P', port.fileno()))
+            SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, pack("P", port.fileno())
+        )
         self.assertEqual(
             (family, client.getpeername()[:2], client.getsockname()[:2]),
-            _iocp.get_accept_addrs(server.fileno(), buff))
-
+            _iocp.get_accept_addrs(server.fileno(), buff),
+        )
 
     def test_ipv4AcceptAddress(self):
         """
@@ -81,12 +91,13 @@ class SupportTests(unittest.TestCase):
           - the third element is the same type giving the host address of the
             connection
         """
-        self._acceptAddressTest(AF_INET, '127.0.0.1')
+        self._acceptAddressTest(AF_INET, "127.0.0.1")
 
-
+    @skipIf(ipv6Skip, ipv6SkipReason)
     def test_ipv6AcceptAddress(self):
         """
-        Like L{test_ipv4AcceptAddress}, but for IPv6 connections.  In this case:
+        Like L{test_ipv4AcceptAddress}, but for IPv6 connections.
+        In this case:
 
           - the first element is C{AF_INET6}
           - the second element is a two-tuple of a hexadecimal IPv6 address
@@ -94,13 +105,10 @@ class SupportTests(unittest.TestCase):
           - the third element is the same type giving the host address of the
             connection
         """
-        self._acceptAddressTest(AF_INET6, '::1')
-    if ipv6Skip is not None:
-        test_ipv6AcceptAddress.skip = ipv6Skip
+        self._acceptAddressTest(AF_INET6, "::1")
 
 
-
-class IOCPReactorTests(unittest.TestCase):
+class IOCPReactorTests(TestCase):
     def test_noPendingTimerEvents(self):
         """
         Test reactor behavior (doIteration) when there are no pending time
@@ -110,7 +118,6 @@ class IOCPReactorTests(unittest.TestCase):
         ir.wakeUp()
         self.assertFalse(ir.doIteration(None))
 
-
     def test_reactorInterfaces(self):
         """
         Verify that IOCP socket-representing classes implement IReadWriteHandle
@@ -118,23 +125,24 @@ class IOCPReactorTests(unittest.TestCase):
         self.assertTrue(verifyClass(IReadWriteHandle, tcp.Connection))
         self.assertTrue(verifyClass(IReadWriteHandle, udp.Port))
 
-
     def test_fileHandleInterfaces(self):
         """
         Verify that L{Filehandle} implements L{IPushProducer}.
         """
         self.assertTrue(verifyClass(IPushProducer, FileHandle))
 
-
     def test_maxEventsPerIteration(self):
         """
         Verify that we don't lose an event when more than EVENTS_PER_LOOP
         events occur in the same reactor iteration
         """
+
         class FakeFD:
             counter = 0
+
             def logPrefix(self):
-                return 'FakeFD'
+                return "FakeFD"
+
             def cb(self, rc, bytes, evt):
                 self.counter += 1
 
@@ -147,4 +155,3 @@ class IOCPReactorTests(unittest.TestCase):
         self.assertEqual(fd.counter, EVENTS_PER_LOOP)
         ir.doIteration(0)
         self.assertEqual(fd.counter, EVENTS_PER_LOOP + 1)
-

@@ -22,10 +22,9 @@ class JabberStrPortsPlaceHolderTests(unittest.TestCase):
         L{jstrports.parse} accepts an endpoint description string and returns a
         tuple and dict of parsed endpoint arguments.
         """
-        expected = ('TCP', ('DOMAIN', 65535, 'Factory'), {})
+        expected = ("TCP", ("DOMAIN", 65535, "Factory"), {})
         got = jstrports.parse("tcp:DOMAIN:65535", "Factory")
         self.assertEqual(expected, got)
-
 
     def test_client(self):
         """
