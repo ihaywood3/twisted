@@ -16,7 +16,6 @@ from twisted.internet.defer import succeed
 log = Logger()
 
 
-
 class PipeShim:
     def __init__(self, pipe):
         self.__pipe = pipe
@@ -27,7 +26,7 @@ class PipeShim:
     def read(self, offset, length):
         data = self.__pipe.dataAvailable(length)
         if len(data) == 0:
-            raise base.SMBError('pipe empty', types.NTStatus.PIPE_EMPTY)
+            raise base.SMBError("pipe empty", types.NTStatus.PIPE_EMPTY)
         self.atime = base.wiggleTime()
         return succeed(data)
 
@@ -54,10 +53,9 @@ class PipeShim:
 
     def getFileStandardInformation(self):
         # for pipes entirely "canned" data will suffice
-        return types.FileStandardInformation(alloc_size=types.CLUSTER_SIZE,
-                                             end_of_file=0,
-                                             delete_pending=1,
-                                             links=1)
+        return types.FileStandardInformation(
+            alloc_size=types.CLUSTER_SIZE, end_of_file=0, delete_pending=1, links=1
+        )
 
     def getFileNetworkOpenInformation(self):
         return types.FileNetworkOpenInformation(
@@ -67,4 +65,5 @@ class PipeShim:
             mtime=base.unixToNTTime(self.ctime),
             wtime=base.unixToNTTime(self.wtime),
             atime=base.unixToNTTime(self.atime),
-            attributes=types.FILE_ATTRIBUTE_NORMAL)
+            attributes=types.FILE_ATTRIBUTE_NORMAL,
+        )

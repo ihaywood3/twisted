@@ -8,10 +8,8 @@ Various interfaces for realms, avatars and related objects
 from zope.interface import Interface, Attribute
 
 
-
 class NoSuchShare(Exception):
     pass
-
 
 
 class ISMBServer(Interface):
@@ -43,12 +41,10 @@ class ISMBServer(Interface):
         """
 
 
-
 class IFilesystem(Interface):
     """
     A share representing a filesystem ("disk" in the SMB spec)
     """
-
 
 
 class IPrinter(Interface):
@@ -57,11 +53,11 @@ class IPrinter(Interface):
     """
 
 
-
 class IIPC(Interface):
     """
     A share representing a interprocess communication (IPC) service
     """
+
     def open(name):
         """
         open a named pipe
@@ -73,11 +69,11 @@ class IIPC(Interface):
         """
 
 
-
 class IPipe(Interface):
     """
     a single named pipe
     """
+
     def dataReceived(data):
         """
         data received (written to) the pipe

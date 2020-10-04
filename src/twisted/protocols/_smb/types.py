@@ -10,19 +10,18 @@ from collections import namedtuple
 import enum
 import attr
 
-from twisted.protocols._smb.base import (byte, short, medium, long, uuid,
-                                         octets)
+from twisted.protocols._smb.base import byte, short, medium, long, uuid, octets
 
-SMBMind = namedtuple('SMBMind', 'session_id domain addr')
-SystemData = namedtuple('SystemData', 'server_uuid boot_time domain fqdn fake')
+SMBMind = namedtuple("SMBMind", "session_id domain addr")
+SystemData = namedtuple("SystemData", "server_uuid boot_time domain fqdn fake")
 # a collection of, possibly fake, system data that gets reported at various
 # points in the protocol
-
 
 
 @attr.s
 class NegReq:
     """negotiate request"""
+
     size = short(36, locked=True)
     dialect_count = short()
     security_mode = short()
@@ -31,16 +30,15 @@ class NegReq:
     client_uuid = uuid()
 
 
-
 MAX_READ_SIZE = 0x10000
 MAX_TRANSACT_SIZE = 0x10000
 MAX_WRITE_SIZE = 0x10000
 
 
-
 @attr.s
 class NegResp:
     """negotiate response"""
+
     size = short(65, locked=True)
     signing = short()
     dialect = short()
@@ -57,10 +55,10 @@ class NegResp:
     reserved2 = medium()
 
 
-
 @attr.s
 class SessionReq:
     """session setup request"""
+
     size = short(25, locked=True)
     flags = byte()
     security_mode = byte()
@@ -71,45 +69,44 @@ class SessionReq:
     prev_session_id = long()
 
 
-
 @attr.s
 class SessionResp:
     """seesion setup response"""
+
     size = short(9, locked=True)
     flags = short()
     offset = short(72, locked=True)
     buflen = short()
 
 
-
 @attr.s
 class BasicPacket:
     """structure used in several request/response types"""
+
     size = short(4, locked=True)
     reserved = short()
-
 
 
 @attr.s
 class TreeReq:
     """tree connect request"""
+
     size = short(9, locked=True)
     reserved = short()
     offset = short()
     buflen = short()
 
 
-
 @attr.s
 class TreeResp:
     """tree connect response"""
+
     size = short(16, locked=True)
     share_type = byte()
     reserved = byte()
     flags = medium()
     capabilities = medium()
     max_perms = medium()
-
 
 
 class OplockLevels(enum.Enum):
@@ -120,13 +117,11 @@ class OplockLevels(enum.Enum):
     Lease = 0xFF
 
 
-
 class ImpersonationationLevel(enum.Enum):
     Anonymous = 0
     Identification = 1
     Impersonation = 2
     Delegate = 3
-
 
 
 FILE_ATTRIBUTE_ARCHIVE = 0x00000020
@@ -151,7 +146,6 @@ FILE_SHARE_WRITE = 0x02
 FILE_SHARE_DELETE = 0x03
 
 
-
 class CreateDisposition(enum.Enum):
     Supersede = 0
     Open = 1
@@ -159,7 +153,6 @@ class CreateDisposition(enum.Enum):
     OpenIf = 3
     Overwrite = 4
     OverwriteIf = 5
-
 
 
 # for CreateReq.options
@@ -186,10 +179,10 @@ FILE_OPEN_NO_RECALL = 0x00400000
 FILE_OPEN_FOR_FREE_SPACE_QUERY = 0x00800000
 
 
-
 @attr.s
 class CreateReq:
     """create (actually "open") a file"""
+
     size = short(57, locked=True)
     security_flags = byte()  # unused
     oplock_level = byte()
@@ -207,13 +200,11 @@ class CreateReq:
     ctx_length = medium()
 
 
-
 class CreateAction(enum.Enum):
     Superseded = 0
     Opened = 1
     Created = 2
     Overwritten = 3
-
 
 
 @attr.s
@@ -235,9 +226,7 @@ class CreateResp:
     ctx_length = medium()
 
 
-
 CLOSE_FLAG_POSTQUERY_ATTRIB = 0x0001
-
 
 
 @attr.s
@@ -246,7 +235,6 @@ class CloseReq:
     flags = short()
     reserved = medium()
     file_id = uuid()
-
 
 
 @attr.s
@@ -263,13 +251,11 @@ class CloseResp:
     attributes = medium()
 
 
-
 @attr.s
 class FlushReq:
     size = short(24, locked=True)
     reserved = octets(6)
     file_id = uuid()
-
 
 
 @attr.s
@@ -287,7 +273,6 @@ class ReadReq:
     channel_length = short()
 
 
-
 @attr.s
 class ReadResp:
     size = medium(17, locked=True)
@@ -298,10 +283,8 @@ class ReadResp:
     reserved2 = medium()
 
 
-
 WRITEFLAG_WRITE_THROUGH = 0x00000001
 WRITEFLAG_WRITE_UNBUFFERED = 0x00000002
-
 
 
 @attr.s
@@ -318,7 +301,6 @@ class WriteReq:
     flags = medium()
 
 
-
 @attr.s
 class WriteResp:
     size = short(17, locked=True)
@@ -329,9 +311,9 @@ class WriteResp:
     channel_length = short()  # unused
 
 
-
 class Ioctl(enum.Enum):
     """values for Ioctl.ctl_code"""
+
     FSCTL_DFS_GET_REFERRALS = 0x00060194
     FSCTL_PIPE_PEEK = 0x0011400C
     FSCTL_PIPE_WAIT = 0x00110018
@@ -339,7 +321,7 @@ class Ioctl(enum.Enum):
     FSCTL_SRV_COPYCHUNK = 0x001440F2
     FSCTL_SRV_ENUMERATE_SNAPSHOTS = 0x00144064
     FSCTL_SRV_REQUEST_RESUME_KEY = 0x00140078
-    FSCTL_SRV_READ_HASH = 0x001441bb
+    FSCTL_SRV_READ_HASH = 0x001441BB
     FSCTL_SRV_COPYCHUNK_WRITE = 0x001480F2
     FSCTL_LMR_REQUEST_RESILIENCY = 0x001401D4
     FSCTL_QUERY_NETWORK_INTERFACE_INFO = 0x001401FC
@@ -349,9 +331,7 @@ class Ioctl(enum.Enum):
     FSCTL_VALIDATE_NEGOTIATE_INFO = 0x00140204
 
 
-
 IOCTL_FLAG_IS_FSCTL = 0x01
-
 
 
 @attr.s
@@ -370,7 +350,6 @@ class IoctlReq:
     reserved2 = medium()
 
 
-
 @attr.s
 class IoctlResp:
     size = short(49, locked=True)
@@ -385,22 +364,22 @@ class IoctlResp:
     reserved2 = medium()
 
 
-
 class InfoType(enum.Enum):
     """
     QueryInfoReq.info_type
     """
+
     FILE = 0x01
     FILESYSTEM = 0x02
     SECURITY = 0x03
     QUOTA = 0x04
 
 
-
 class InfoClassFiles(enum.Enum):
     """
     QueryInfoReq.info_class when info_type == INFO_FILE
     """
+
     FileAccessInformation = 8  # query
     FileAlignmentInformation = 17  # query
     FileAllInformation = 18  # query
@@ -436,11 +415,11 @@ class InfoClassFiles(enum.Enum):
     FileValidDataLengthInformation = 39  # set
 
 
-
 class InfoClassFileSystems(enum.Enum):
     """
     QueryInfoReq.info_class when info_type == INFO_FILESYSTEM
     """
+
     FileFsVolumeInformation = 1
     FileFsSizeInformation = 3
     FileFsDeviceInformation = 4
@@ -449,7 +428,6 @@ class InfoClassFileSystems(enum.Enum):
     FileFsFullSizeInformation = 7
     FileFsObjectIdInformation = 8  # set
     FileFsSectorSizeInformation = 11
-
 
 
 @attr.s
@@ -466,13 +444,11 @@ class QueryInfoReq:
     file_id = uuid()
 
 
-
 @attr.s
 class QueryInfoResp:
     size = short(9, locked=True)
     offset = short(72)
     length = medium()
-
 
 
 @attr.s
@@ -487,11 +463,9 @@ class SetInfoReq:
     file_id = uuid()
 
 
-
 @attr.s
 class SetInfoResp:
     size = short(2, locked=True)
-
 
 
 # QueryDirReq.flags
@@ -499,7 +473,6 @@ QUERY_DIR_RESTART_SCANS = 0x01
 QUERY_DIR_RETURN_SINGLE_ENTRY = 0x02
 QUERY_DIR_INDEX_SPECIFIED = 0x04
 QUERY_DIR_REOPEN = 0x10
-
 
 
 @attr.s
@@ -514,10 +487,8 @@ class QueryDirReq:
     output_buffer_length = medium()
 
 
-
 # no "QueryDirResp" as identical to QueryInfoResp
 QueryDirResp = QueryInfoResp
-
 
 
 @attr.s
@@ -528,13 +499,11 @@ class LockReq:
     file_id = uuid()
 
 
-
 # LockElement.flags
 LOCKFLAG_SHARED_LOCK = 0x00000001
 LOCKFLAG_EXCLUSIVE_LOCK = 0x00000002
 LOCKFLAG_UNLOCK = 0x00000004
 LOCKFLAG_FAIL_IMMEDIATELY = 0x00000010
-
 
 
 @attr.s
@@ -543,7 +512,6 @@ class LockElement:
     length = long()
     flags = medium()
     reserved = medium()
-
 
 
 # ChangeNotifyReq.flags
@@ -564,7 +532,6 @@ FILE_NOTIFY_CHANGE_STREAM_SIZE = 0x00000400
 FILE_NOTIFY_CHANGE_STREAM_WRITE = 0x00000800
 
 
-
 @attr.s
 class ChangeNotifyReq:
     size = short(32, locked=True)
@@ -575,10 +542,8 @@ class ChangeNotifyReq:
     reserved = medium()
 
 
-
 # no "ChangeNotifyResp" as identical to QueryInfoResp
 ChangeNotifyResp = QueryInfoResp
-
 
 
 @attr.s
@@ -589,11 +554,9 @@ class OplockBreakAck:
     file_id = uuid()
 
 
-
 # other uses identical
 OplockBreakNotify = OplockBreakAck
 OplockBreakResp = OplockBreakAck
-
 
 
 # the complete list of NT statuses is very large, so just
@@ -625,7 +588,6 @@ class NTStatus(enum.Enum):
     INVALID_PARAMETER = 0xC000000E
     NOT_FOUND = 0xC0000225
     INVALID_DEVICE_REQUEST = 0xC0000010
-
 
 
 FLAG_SERVER = 0x01
@@ -710,11 +672,10 @@ GENERIC_EXECUTE = 0x20000000
 GENERIC_WRITE = 0x40000000
 GENERIC_READ = 0x80000000
 
-SMB1_MAGIC = b'\xFFSMB'
-SMB2_MAGIC = b'\xFESMB'
+SMB1_MAGIC = b"\xFFSMB"
+SMB2_MAGIC = b"\xFESMB"
 
-ERROR_RESPONSE_MAGIC = b'\x09\0\0\0\0\0\0\0'
-
+ERROR_RESPONSE_MAGIC = b"\x09\0\0\0\0\0\0\0"
 
 
 @attr.s
@@ -735,7 +696,6 @@ class HeaderSync:
     async_id = attr.ib(default=0)
 
 
-
 @attr.s
 class HeaderAsync:
     magic = octets(default=SMB2_MAGIC)
@@ -753,7 +713,6 @@ class HeaderAsync:
     tree_id = attr.ib(default=0)
 
 
-
 @attr.s
 class FileStandardInformation:
     alloc_size = long()
@@ -764,7 +723,6 @@ class FileStandardInformation:
     reserved = medium()
 
 
-
 @attr.s
 class FileBasicInformation:
     ctime = long()
@@ -773,7 +731,6 @@ class FileBasicInformation:
     mtime = long()
     attributes = medium()
     reserved = medium()
-
 
 
 @attr.s
@@ -788,7 +745,6 @@ class FileNetworkOpenInformation:
     reserved = medium()
 
 
-
 @attr.s
 class FileRenameInformation:
     replace = byte()
@@ -796,7 +752,6 @@ class FileRenameInformation:
     root_dir = long()  # not used
     length = medium()
     filename = attr.ib(default="")
-
 
 
 @attr.s
