@@ -281,6 +281,7 @@ def negotiateResponse(packet, dialects=None):
             raise base.SMBError(
                 "min client dialect %04x higher than our max %04x"
                 % (dialect, types.MAX_DIALECT)
+                % (dialect, MAX_DIALECT)
             )
         log.debug("dialect {dlt:04x} chosen", dlt=dialect)
     resp = types.NegResp()
@@ -817,7 +818,7 @@ output  {obl}
 
 def smb_ioctl(packet, resp_type):
     # this is a minimal implementation to satisfy clients that insist on
-    # trying to obtain DFS referrals
+    # trying to obtain DFS
     if packet.body.file_id == base.UUID_MAX:
         fd = None
     else:
