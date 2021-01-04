@@ -52,7 +52,7 @@ import uuid as uuid_mod
 
 from zope.interface import implementer
 
-from twisted.protocols._smb import base, ismb
+from twisted.protocols._smb import base, ismb, vfs
 from twisted.protocols._smb.base import byte, short, medium, uuid, octets
 from twisted.logger import Logger
 from twisted.internet.defer import maybeDeferred
@@ -840,7 +840,7 @@ SHARE_IPC = 3
 SHARE_SPECIAL_MASK = 0x80000000
 
 SHARES_T = {
-    id(ismb.IFilesystem): SHARE_DISC,
+    id(vfs.IFilesystem): SHARE_DISC,
     id(ismb.IPrinter): SHARE_PRINTER,
     id(ismb.IIPC): SHARE_IPC,
 }

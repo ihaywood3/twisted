@@ -11,8 +11,16 @@ import uuid
 import os
 import unittest as python_unittest
 
-from twisted.protocols._smb import base, core, security_blob, ntlm, dcerpc, types
-from twisted.protocols._smb.ismb import ISMBServer, IFilesystem, NoSuchShare
+from twisted.protocols._smb import (
+    base,
+    core,
+    security_blob,
+    ntlm,
+    dcerpc,
+    smbtypes,
+    vfs,
+)
+from twisted.protocols._smb.ismb import ISMBServer, NoSuchShare
 
 from twisted.cred import portal, checkers, credentials
 from twisted.trial import unittest
@@ -44,6 +52,12 @@ class FakeStruct2:
     s = base.octets(3)
 
 
+@attr.s
+class FakeStruct3:
+    six_len = base.short()
+    six = base.endstring()
+
+
 class TestBase(unittest.TestCase):
     def test_base_pack(self):
         data = struct.pack("<HBf3sQ", 525, 42, 4.2, b"bob", 424242)
@@ -53,6 +67,13 @@ class TestBase(unittest.TestCase):
         self.assertEqual(base.pack(r), data)
         with self.assertRaises(AssertionError):
             r = FakeStruct(five=424243)
+
+    def test_base_endstring(self):
+        s1 = "burble"
+        b1 = s1.encode("utf-16le")
+        data = struct.pack("<H", len(b1)) + b1
+        r = FakeStruct3(six=s1)
+        self.assertEquals(base.pack(r), data)
 
     def test_base_calcsize(self):
         self.assertEqual(base.calcsize(FakeStruct), 18)
@@ -158,7 +179,7 @@ AUTH_PACKET = (
 )
 
 CHALLENGE = b"&z\xd3>Cu\xdd+"
-SYS_DATA = types.SystemData(base.NULL_UUID, 0, "DOMAIN", "localhost", False)
+SYS_DATA = smbtypes.SystemData(base.NULL_UUID, 0, "DOMAIN", "localhost", False)
 
 
 class TestSecurity(unittest.TestCase):
@@ -254,30 +275,31 @@ class TestDcerpc(unittest.TestCase):
         pipe.dataReceived(DCERPC_REQUEST)
 
 
-@implementer(IFilesystem)
-class TestDisc:
-    pass
-
-
 @implementer(ISMBServer)
 class TestAvatar:
+    def __init__(self, tvfs):
+        self.tvfs = tvfs
+
     def getShare(self, name):
         if name == "share":
-            return TestDisc()
+            return self.tvfs
         else:
             raise NoSuchShare(name)
 
     def listShares(self):
-        return [("share", IFilesystem, "test disc share")]
+        return [("share", vfs.IFilesystem, "test disc share")]
 
     session_id = 0
 
 
 @implementer(portal.IRealm)
 class TestRealm:
+    def __init__(self, tvfs):
+        self.tvfs = tvfs
+
     def requestAvatar(self, avatarId, mind, *interfaces):
         log.debug("avatarId={a!r} mind={m!r}", a=avatarId, m=mind)
-        return (ISMBServer, TestAvatar(), lambda: None)
+        return (ISMBServer, TestAvatar(self.tvfs), lambda: None)
 
 
 class ChatNotFinished(Exception):
@@ -343,13 +365,28 @@ TESTPORT = 5445
 TESTUSER = "user"
 TESTPASSWORD = "password"
 SMBCLIENT = "/usr/bin/smbclient"
+PROMPT = "smb: \\>"
 
 
 @python_unittest.skipUnless(os.access(SMBCLIENT, os.X_OK), "smbclient unavailable")
 class TestSambaClient(unittest.TestCase):
     def setUp(self):
+        # set up some directories
+        self.oldpath = os.getcwd()
+        self.tpath1 = tempfile.mkdtemp()
+        os.chdir(self.tpath1)
+        with open("one.txt", "w") as fd:
+            fd.write("blah" * 3)
+        with open("two.txt", "w") as fd:
+            fd.write("blah")
+        self.tpath2 = tempfile.mkdtemp()
+        with open(os.path.join(self.tpath2, "three.txt"), "w") as fd:
+            fd.write("blaz" * 3)
+        with open(os.path.join(self.tpath2, "four.txt"), "w") as fd:
+            fd.write("blaz")
+        self.tvfs = vfs.ThreadVfs(self.tpath2)
         # Start the server
-        r = TestRealm()
+        r = TestRealm(self.tvfs)
         p = portal.Portal(r)
         users_checker = checkers.InMemoryUsernamePasswordDatabaseDontUse()
         users_checker.addUser(TESTUSER, TESTPASSWORD)
@@ -357,6 +394,17 @@ class TestSambaClient(unittest.TestCase):
         self.factory = core.SMBFactory(p)
         self.port = port = reactor.listenTCP(TESTPORT, self.factory)
         self.addCleanup(port.stopListening)
+
+    def tearDown(self):
+        for i in os.listdir():
+            os.unlink(i)
+        os.chdir(self.tpath2)
+        os.rmdir(self.tpath1)
+        for i in os.listdir():
+            os.unlink(i)
+        os.chdir(self.oldpath)
+        os.rmdir(self.tpath2)
+        self.tvfs.unregister()
 
     def smbclient(self, chat, ignoreRCode=False):
         return spawn(
@@ -400,10 +448,19 @@ class TestSambaClient(unittest.TestCase):
         )
 
     def test_logon(self):
-        return self.smbclient([("smb: \\>", "quit\n")])
+        return self.smbclient([(PROMPT, "quit\n")])
 
     def test_listshares(self):
         return self.smbclient_list([("test disc share", None)])
+
+    def test_get(self):
+        def cb_get(_):
+            with open("three.txt", "r") as fd:
+                self.assertEqual(fd.read(), "blaz" * 3)
+
+        d = self.smbclient([(PROMPT, "get third.txt\n"), (PROMPT, "quit\n")])
+        d.addCallback(cb_get)
+        return d
 
 
 if __name__ == "__main__":

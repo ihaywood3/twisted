@@ -41,11 +41,6 @@ class ISMBServer(Interface):
         """
 
 
-class IFilesystem(Interface):
-    """
-    A share representing a filesystem ("disk" in the SMB spec)
-    """
-
 
 class IPrinter(Interface):
     """

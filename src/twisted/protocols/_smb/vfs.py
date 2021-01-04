@@ -19,11 +19,7 @@ import platform
 log = Logger()
 
 if platform.system() == 'Linux':
-<<<<<<< HEAD
-    import statx
-=======
     from twisted.protocols._smb import statx
->>>>>>> 9947-ihaywood3-smb-vfs
     def stat(fd):
         return statx.stat(fd)
     def lstat(fd):
@@ -567,11 +563,7 @@ class ThreadVfs:
             except AttributeError:
                 # some systems dont have at all
                 return None
-<<<<<<< HEAD
-             d = dict(
-=======
             d = dict(
->>>>>>> 9947-ihaywood3-smb-vfs
                 size=v.f_frsize,
                 blocks=v.f_blocks,
                 free=v.f_bavail,
