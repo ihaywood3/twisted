@@ -8,6 +8,7 @@ import socket
 import re
 import attr
 import uuid
+import tempfile
 import os
 import unittest as python_unittest
 
@@ -361,7 +362,7 @@ def spawn(chat, args, ignoreRCode=False, usePTY=True):
     return pro.d
 
 
-TESTPORT = 5445
+TESTPORT = 445
 TESTUSER = "user"
 TESTPASSWORD = "password"
 SMBCLIENT = "/usr/bin/smbclient"
@@ -421,8 +422,8 @@ class TestSambaClient(unittest.TestCase):
                 "127.0.0.1",
                 "-p",
                 str(TESTPORT),
-                "-d",
-                "10",
+                # "-d",
+                # "10",
             ],
             ignoreRCode=ignoreRCode,
             usePTY=True,
@@ -458,7 +459,7 @@ class TestSambaClient(unittest.TestCase):
             with open("three.txt", "r") as fd:
                 self.assertEqual(fd.read(), "blaz" * 3)
 
-        d = self.smbclient([(PROMPT, "get third.txt\n"), (PROMPT, "quit\n")])
+        d = self.smbclient([(PROMPT, "get three.txt\n"), (PROMPT, "quit\n")])
         d.addCallback(cb_get)
         return d
 

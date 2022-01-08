@@ -50,7 +50,7 @@ class IFilesystem(Interface):
     based closely on L{twisted.conch.interfaces.ISFTPServer}
     """
 
-    def openFile(filename, flags, attrs):
+    def openFile(filename, flags=0, attrs=None):
         """
         Called when the clients asks to open a file.
 

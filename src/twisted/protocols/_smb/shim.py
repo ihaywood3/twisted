@@ -9,6 +9,9 @@ from having to implement a lot of standard "boilerplate" functionality
 The shim objects play the role of "filesystem driver" in Windows.
 """
 
+import os.path
+import stat
+
 from twisted.protocols._smb import base, smbtypes
 from twisted.logger import Logger
 from twisted.internet.defer import succeed
@@ -86,43 +89,51 @@ class FilesystemShim:
         flags = 0
         if kwargs["disposition"] == smbtypes.CreateDisposition.Supersede:
             flags |= os.O_CREAT | os.O_TRUNC
-            action = smbtypes.CreateAction.Superseded
+            def_action = smbtypes.CreateAction.Superseded
         elif kwargs["disposition"] == smbtypes.CreateDisposition.Open:
-            action = smbtypes.CreateAction.Opened
+            def_action = smbtypes.CreateAction.Opened
         elif kwargs["disposition"] == smbtypes.CreateDisposition.Create:
             flags |= os.O_CREAT | os.O_EXCL
-            action = smbtypes.CreateAction.Created
+            def_action = smbtypes.CreateAction.Created
         elif kwargs["disposition"] == smbtypes.CreateDisposition.OpenIf:
             flags |= os.O_CREAT
-            action = smbtypes.CreateAction.Opened
+            def_action = smbtypes.CreateAction.Opened
         elif kwargs["disposition"] == smbtypes.CreateDisposition.Overwrite:
             flags |= os.O_TRUNC
-            action = smbtypes.CreateAction.Overwritten
+            def_action = smbtypes.CreateAction.Overwritten
         elif kwargs["disposition"] == smbtypes.CreateDisposition.OverwriteIf:
             flags |= os.O_CREAT | os.O_TRUNC
-            action = smbtypes.CreateAction.Overwritten
+            def_action = smbtypes.CreateAction.Overwritten
 
         def cb_addshim(fd, action, attrs):
             driver = FileShim(fd, path)
             if attrs:
-                fd.setInitialAttrs(attrs)
+                driver.setInitialAttrs(attrs)
             return (driver, action)
 
+        def eb_addshim(failure):
+            failure.trap(FileNotFoundError)
+            raise base.SMBError("file not found", smbtypes.NTStatus.NO_SUCH_FILE)
+
         def cb_file(attrs, action):
-            d = self.__vfs.open(path)
+            d = self.__vfs.openFile(path, flags)
             d.addCallback(cb_addshim, action, attrs)
+            d.addErrback(eb_addshim)
             return d
 
         def eb_file(failure):
-            d = self.__vfs.open(path)
+            log.failure("eb_file", failure)
+            failure.trap(FileNotFoundError)
+            d = self.__vfs.openFile(path, flags)
             d.addCallback(cb_addshim, smbtypes.CreateAction.Created, None)
+            d.addErrback(eb_addshim)
             return d
 
-        if action == smbtypes.CreateAction.Created:
-            return cb_file(None, action)
+        if def_action == smbtypes.CreateAction.Created:
+            return cb_file(None, def_action)
         else:
             d2 = self.__vfs.getAttrs(path)
-            d2.addCallback(cb_file, action)
+            d2.addCallback(cb_file, def_action)
             d2.addErrback(eb_file)
             return d2
 
@@ -163,18 +174,24 @@ class FileShim:
         d.addCallback(cb_attr)
         return d
 
+    def _a2attrib(self, a):
+        """
+        create NT file attributes masks
+        """
+        attributes = 0
+        if os.path.basename(self.path).startswith("."):
+            attributes |= smbtypes.FILE_ATTRIBUTE_HIDDEN
+        if a["permissions"] & stat.S_IWUSR == 0:
+            attributes |= smbtypes.FILE_ATTRIBUTE_READONLY
+        if stat.S_ISDIR(a["permissions"]):
+            attributes |= smbtypes.FILE_ATTRIBUTE_DIRECTORY
+            self.is_dir = True
+        if attributes == 0:
+            attributes = smbtypes.FILE_ATTRIBUTE_NORMAL
+        return attributes
+
     def getFileNetworkOpenInformation(self):
         def cb_fnoi(a):
-            attributes = 0
-            if os.path.basename(self.path).startswith("."):
-                attributes |= smbtypes.FILE_ATTRIBUTE_HIDDEN
-            if a["permissions"] & stat.S_IWUSR == 0:
-                attributes |= smbtypes.FILE_ATTRIBUTE_READONLY
-            if stat.S_ISDIR(a["permissions"]):
-                attributes |= smbtypes.FILE_ATTRIBUTE_DIRECTORY
-                self.is_dir = True
-            if attributes == 0:
-                attributes = smbtypes.FILE_ATTRIBUTE_NORMAL
             return smbtypes.FileNetworkOpenInformation(
                 alloc_size=a.get("ext_blksize", smbtypes.CLUSTER_SIZE),
                 end_of_file=a["size"],
@@ -182,7 +199,7 @@ class FileShim:
                 mtime=base.unixToNTTime(a.get("ext_ctime", a["mtime"])),
                 wtime=base.unixToNTTime(a["mtime"]),
                 atime=base.unixToNTTime(a["atime"]),
-                attributes=attributes,
+                attributes=self._a2attrib(a),
             )
 
         if self.init_attr:
@@ -193,3 +210,54 @@ class FileShim:
             d = self.__fd.getAttrs()
             d.addCallback(cb_fnoi)
             return d
+
+    def getFileBasicInformation(self):
+        def cb_fbi(a):
+            return smbtypes.FileBasicInformation(
+                ctime=base.unixToNTTime(a.get("ext_birthtime", a["mtime"])),
+                mtime=base.unixToNTTime(a.get("ext_ctime", a["mtime"])),
+                wtime=base.unixToNTTime(a["mtime"]),
+                atime=base.unixToNTTime(a["atime"]),
+                attributes=self._a2attrib(a),
+            )
+
+        d = self.__fd.getAttrs()
+        d.addCallback(cb_fbi)
+        return d
+
+    def getFileAllInformation(self):
+        def cb_fai(a):
+            access_flags = 0
+            if a["permissions"] & stat.S_IWUSR:
+                access_flags |= (
+                    smbtypes.FILE_WRITE_DATA
+                    | smbtypes.DELETE
+                    | smbtypes.FILE_APPEND_DATA
+                )
+                if stat.S_ISDIR(a["permissions"]):
+                    access_flags |= smbtypes.FILE_DELETE_CHILD
+            if a["permissions"] & stat.S_IRUSR:
+                access_flags |= smbtypes.FILE_READ_DATA
+            if a["permissions"] & stat.S_IEXEC:
+                access_flags |= smbtypes.FILE_EXECUTE
+            return smbtypes.FileAllInformation(
+                # FileStandardInformation
+                alloc_size=a.get("ext_blksize", smbtypes.CLUSTER_SIZE),
+                end_of_file=a["size"],
+                delete_pending=self.delete_pending,
+                links=a.get("ext_nlinks", 1),
+                # FileBasicInformation
+                ctime=base.unixToNTTime(a.get("ext_birthtime", a["mtime"])),
+                mtime=base.unixToNTTime(a.get("ext_ctime", a["mtime"])),
+                wtime=base.unixToNTTime(a["mtime"]),
+                atime=base.unixToNTTime(a["atime"]),
+                attributes=self._a2attrib(a),
+                # FileAccessInformation
+                access_flags=access_flags,
+                # FileNamesInformation
+                file_name=os.path.basename(self.path),
+            )
+
+        d = self.__fd.getAttrs()
+        d.addCallback(cb_fai)
+        return d

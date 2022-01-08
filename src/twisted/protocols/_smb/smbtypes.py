@@ -125,7 +125,7 @@ class OplockLevels(enum.Enum):
     Lease = 0xFF
 
 
-class ImpersonationationLevel(enum.Enum):
+class ImpersonationLevel(enum.Enum):
     Anonymous = 0
     Identification = 1
     Impersonation = 2
@@ -283,7 +283,7 @@ class ReadReq:
 
 @attr.s
 class ReadResp:
-    size = medium(17, locked=True)
+    size = short(17, locked=True)
     offset = byte()
     reserved = byte()
     length = medium()
@@ -728,7 +728,7 @@ class FileStandardInformation:
     links = medium()
     delete_pending = byte()
     directory = byte()
-    reserved = medium()
+    reserved = short()
 
 
 @attr.s
@@ -821,3 +821,58 @@ class FileFsAttributeInformation:
     max_path_len = medium()
     fs_type_len = medium()
     fs_type = endstring()
+
+
+class FileMode(enum.IntFlag):
+    WRITE_THROUGH = 0x02
+    SEQUENTIAL_ONLY = 0x04
+    NO_INTERMEDIATE_BUFFERING = 0x08
+    SYNCHRONOUS_IO_ALERT = 0x10
+    SYNCHRONOUS_IO_NONALERT = 0x20
+    DELETE_ON_CLOSE = 0x1000  # "not used"
+
+
+class FileAlignment(enum.Enum):
+    BYTE = 0x0
+    WORD = 0x01
+    LONG = 0x03  # 4 bytes
+    QUAD = 0x07  # 8 bytes
+    OCTA = 0x0F
+    B32 = 0x1F
+    B64 = 0x3F
+    B128 = 0x7F
+    B256 = 0xFF
+    B512 = 0x1FF
+
+
+@attr.s
+class FileAllInformation:
+    # FileBasicInformation
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    attributes = medium()
+    reserved1 = medium()
+    # FileStandardInformation
+    alloc_size = long()
+    end_of_file = long()
+    links = medium()
+    delete_pending = byte()
+    directory = byte()
+    reserved2 = short()
+    # FileInternalInformation
+    index_number = long()  # can be 0
+    # FileEaInformation
+    ea_size = medium()  # can be 0
+    # FileAccessInformation
+    access_flags = medium()
+    # FilePositionInformation
+    current_byte_offset = long()  # not actually used for networking
+    # FileModeInformation
+    mode = medium()
+    # FileAlignmentInformation
+    alignment_requirement = medium()
+    # FileNamesInformation
+    file_name_len = medium()
+    file_name = endstring()

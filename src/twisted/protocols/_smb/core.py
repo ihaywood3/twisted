@@ -441,7 +441,7 @@ Path   {path!r}
 
     def cb_tree(share):
         resp = None
-        if vfs.IFilesystem.providedBy(share):
+        if IFilesystem.providedBy(share):
             resp = resp_type(
                 share_type=smbtypes.SHARE_DISK,
                 # FUTURE: select these values from share object
@@ -725,6 +725,13 @@ file    {fd!r}
         else:
             padding = b""
         resp = smbtypes.ReadResp(offset=offset, length=len(data))
+        log.debug(
+            "read resp offset:{offset} min_offset:{min_offset} length:{length} resp {resp!r}",
+            length=len(data),
+            min_offset=min_offset,
+            offset=offset,
+            resp=resp,
+        )
         packet.data = base.pack(resp) + padding + data
         sendHeader(packet)
 
@@ -778,16 +785,16 @@ def smb_query_info(packet, resp_type):
         info_type = smbtypes.InfoType(packet.body.info_type)
     except ValueError:
         raise base.SMBError("invalid info_type", smbtypes.NTStatus.INVALID_PARAMETER)
-    if isinstance(info_type, smbtypes.InfoType.QUOTA):
+    if info_type is smbtypes.InfoType.QUOTA:
         raise base.SMBError("Quotas not supported", smbtypes.NTStatus.NOT_SUPPORTED)
-    elif isinstance(info_type, smbtypes.InfoType.SECURITY):
+    elif info_type is smbtypes.InfoType.SECURITY:
         raise base.SMBError('"security" not supported', smbtypes.NTStatus.NOT_SUPPORTED)
-    elif isinstance(info_type, smbtypes.InfoType.FILE):
+    elif info_type is smbtypes.InfoType.FILE:
         try:
             info_class = smbtypes.InfoClassFiles(packet.body.info_class)
         except ValueError:
             raise base.SMBError("info_class", smbtypes.NTStatus.INVALID_INFO_CLASS)
-    elif isinstance(info_type, smbtypes.InfoType.FILESYSTEM):
+    elif info_type is smbtypes.InfoType.FILESYSTEM:
         try:
             info_class = smbtypes.InfoClassFileSystems(packet.body.info_class)
         except ValueError:
@@ -834,7 +841,7 @@ output  {obl}
 
     func_name = "get" + info_class.name
     try:
-        if isinstance(info_type, smbtypes.InfoType.FILE):
+        if info_type is smbtypes.InfoType.FILE:
             if fd is None:
                 raise base.SMBError(
                     "must have file_id for FILE info type",

@@ -182,15 +182,18 @@ def octets(length=None, default=None, locked=False):
         validator=default_only if locked else None,
     )
 
-SMB_METADATA_ENDSTR="__smb_metadata_ endstr"
+
+SMB_METADATA_ENDSTR = "__smb_metadata_ endstr"
+
 
 def endstring():
     """
-    A variable-length UTF-16 string at the end of the data packet. 
+    A variable-length UTF-16 string at the end of the data packet.
     Length is stored in a field of the same name suffixed by "_len"
-    Serialisation only as yet 
+    Serialisation only as yet
     """
-    return attr.ib(type=str, default ="", metadata={SMB_METADATA_ENDSTR:True })
+    return attr.ib(type=str, default="", metadata={SMB_METADATA_ENDSTR: True})
+
 
 UUID_MAX = uuid_mod.UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
 NULL_UUID = uuid_mod.UUID("00000000-0000-0000-0000-000000000000")
@@ -231,7 +234,7 @@ def pack(obj):
         if SMB_METADATA_ENDSTR in i.metadata:
             v = getattr(obj, i.name)
             v = v.encode("utf-16le")
-            setattr(obj, i.name +"_len", len(v))
+            setattr(obj, i.name + "_len", len(v))
             ba.extend(v)
     strct = _get_struct(type(obj))
     args = tuple(_conv_arg(obj, i) for i in smb_fields(type(obj)))
