@@ -36,7 +36,7 @@ def ensureNotImported(moduleNames, errorMessage, preventImports=[]):
     @param errorMessage: Message to use when raising an C{ImportError}.
     @type errorMessage: C{str}
 
-    @raises: C{ImportError} with given error message if a given module name
+    @raise ImportError: with given error message if a given module name
         has already been imported.
     """
     for name in moduleNames:
@@ -354,8 +354,8 @@ class PortableGlibReactorBase(selectreactor.SelectReactor):
         if self._simtag is not None:
             self._source_remove(self._simtag)
         self.iterate()
-        timeout = min(self.timeout(), 0.01)
-        if timeout is None:
+        timeout = self.timeout()
+        if timeout is None or timeout > 0.01:
             timeout = 0.01
         self._simtag = self._timeout_add(
             int(timeout * 1000),

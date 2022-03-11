@@ -7,94 +7,91 @@ L{IReactorSocket}.
 """
 
 
-__metaclass__ = type
-
 import errno
 import gc
 import io
 import os
 import socket
-
 from functools import wraps
-from typing import Optional, Sequence, Type
+from typing import Callable, ClassVar, List, Optional, Sequence, Type
 from unittest import skipIf
-
-import attr
 
 from zope.interface import Interface, implementer
 from zope.interface.verify import verifyClass, verifyObject
 
-from twisted.logger import Logger
-from twisted.python.runtime import platform
-from twisted.python.failure import Failure
-from twisted.python import log
+import attr
 
-from twisted.trial.unittest import SkipTest, SynchronousTestCase, TestCase
+from twisted.internet.address import IPv4Address, IPv6Address
+from twisted.internet.defer import (
+    Deferred,
+    DeferredList,
+    fail,
+    gatherResults,
+    maybeDeferred,
+    succeed,
+)
+from twisted.internet.endpoints import TCP4ClientEndpoint, TCP4ServerEndpoint
 from twisted.internet.error import (
-    ConnectionLost,
-    UserError,
-    ConnectionRefusedError,
-    ConnectionDone,
+    ConnectBindError,
     ConnectionAborted,
+    ConnectionClosed,
+    ConnectionDone,
+    ConnectionLost,
+    ConnectionRefusedError,
     DNSLookupError,
     NoProtocol,
-    ConnectBindError,
-    ConnectionClosed,
-)
-from twisted.internet.test.connectionmixins import (
-    LogObserverMixin,
-    ConnectionTestsMixin,
-    StreamClientTestsMixin,
-    findFreePort,
-    ConnectableProtocol,
-    EndpointCreator,
-    runProtocolsWithReactor,
-    Stop,
-    BrokenContextFactory,
-)
-from twisted.internet.test.reactormixins import (
-    ReactorBuilder,
-    needsRunningReactor,
-    stopOnError,
+    UserError,
 )
 from twisted.internet.interfaces import (
-    ILoggingContext,
     IConnector,
+    IHalfCloseableProtocol,
+    ILoggingContext,
+    IPullProducer,
+    IPushProducer,
     IReactorFDSet,
     IReactorSocket,
     IReactorTCP,
     IResolverSimple,
     ITLSTransport,
 )
-from twisted.internet.address import IPv4Address, IPv6Address
-from twisted.internet.defer import (
-    Deferred,
-    DeferredList,
-    maybeDeferred,
-    gatherResults,
-    succeed,
-    fail,
-)
-from twisted.internet.endpoints import TCP4ServerEndpoint, TCP4ClientEndpoint
-from twisted.internet.protocol import ServerFactory, ClientFactory, Protocol
-from twisted.internet.interfaces import (
-    IPushProducer,
-    IPullProducer,
-    IHalfCloseableProtocol,
-)
+from twisted.internet.protocol import ClientFactory, Protocol, ServerFactory
 from twisted.internet.tcp import (
-    _BuffersLogs,
     Connection,
+    Server,
+    _BuffersLogs,
     _FileDescriptorReservation,
     _IFileDescriptorReservation,
     _NullFileDescriptorReservation,
-    Server,
     _resolveIPv6,
 )
-from twisted.internet.test.test_core import ObjectModelIntegrationMixin
-from twisted.test.test_tcp import MyClientFactory, MyServerFactory
-from twisted.test.test_tcp import ClosingFactory, ClientStartStopFactory
+from twisted.internet.test.connectionmixins import (
+    BrokenContextFactory,
+    ConnectableProtocol,
+    ConnectionTestsMixin,
+    EndpointCreator,
+    LogObserverMixin,
+    Stop,
+    StreamClientTestsMixin,
+    findFreePort,
+    runProtocolsWithReactor,
+)
+from twisted.internet.test.reactormixins import (
+    ReactorBuilder,
+    needsRunningReactor,
+    stopOnError,
+)
+from twisted.logger import Logger
+from twisted.python import log
+from twisted.python.failure import Failure
+from twisted.python.runtime import platform
 from twisted.test.proto_helpers import MemoryReactor, StringTransport
+from twisted.test.test_tcp import (
+    ClientStartStopFactory,
+    ClosingFactory,
+    MyClientFactory,
+    MyServerFactory,
+)
+from twisted.trial.unittest import SkipTest, SynchronousTestCase, TestCase
 
 try:
     from OpenSSL import SSL
@@ -109,9 +106,9 @@ s = None
 try:
     s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
     s.bind(("::1", 0))
-except socket.error as e:
+except OSError as e:
     ipv6Skip = True
-    ipv6SkipReason = str(e)
+    ipv6SkipReason = f"IPv6 not available. {e}"
 else:
     ipv6Skip = False
     ipv6SkipReason = ""
@@ -664,7 +661,7 @@ class TCPClientTestsBase(ReactorBuilder, ConnectionTestsMixin, StreamClientTests
             while True:
                 port = findFreePort(self.interface, self.family)
                 bindAddress = (self.interface, port[1])
-                log.msg("Connect attempt with bindAddress {}".format(bindAddress))
+                log.msg(f"Connect attempt with bindAddress {bindAddress}")
                 try:
                     reactor.connectTCP(
                         fakeDomain,
@@ -685,7 +682,7 @@ class TCPClientTestsBase(ReactorBuilder, ConnectionTestsMixin, StreamClientTests
         if clientFactory.failReason:
             self.fail(clientFactory.failReason.getTraceback())
 
-        transportRepr = "<%s to %s at %x>" % (
+        transportRepr = "<{} to {} at {:x}>".format(
             transportData["instance"].__class__,
             transportData["instance"].addr,
             id(transportData["instance"]),
@@ -743,9 +740,7 @@ class TCPClientTestsBase(ReactorBuilder, ConnectionTestsMixin, StreamClientTests
 
         self.runReactor(reactor)
 
-        self.assertEqual(
-            len(results), 1, "more than one callback result: %s" % (results,)
-        )
+        self.assertEqual(len(results), 1, f"more than one callback result: {results}")
 
         if isinstance(results[0], Failure):
             # self.fail(Failure)
@@ -968,7 +963,7 @@ class _IExhaustsFileDescriptors(Interface):
 
 
 @implementer(_IExhaustsFileDescriptors)
-@attr.s
+@attr.s(auto_attribs=True)
 class _ExhaustsFileDescriptors:
     """
     A class that triggers C{EMFILE} by creating as many file
@@ -981,10 +976,14 @@ class _ExhaustsFileDescriptors:
         for passing to L{os.close}.
     """
 
-    _log = Logger()
-    _fileDescriptorFactory = attr.ib(default=lambda: os.dup(0), repr=False)
-    _close = attr.ib(default=os.close, repr=False)
-    _fileDescriptors = attr.ib(default=attr.Factory(list), init=False, repr=False)
+    _log: ClassVar[Logger] = Logger()
+    _fileDescriptorFactory: Callable[[], int] = attr.ib(
+        default=lambda: os.dup(0), repr=False
+    )
+    _close: Callable[[int], None] = attr.ib(default=os.close, repr=False)
+    _fileDescriptors: List[int] = attr.ib(
+        default=attr.Factory(list), init=False, repr=False
+    )
 
     def exhaust(self):
         """
@@ -996,7 +995,7 @@ class _ExhaustsFileDescriptors:
             while True:
                 try:
                     fd = self._fileDescriptorFactory()
-                except (IOError, OSError) as e:
+                except OSError as e:
                     if e.errno == errno.EMFILE:
                         break
                     raise
@@ -1389,15 +1388,6 @@ class StreamTransportTestsMixin(LogObserverMixin):
 
         self.assertIn(expectedMessage, loggedMessages)
 
-    def test_allNewStyle(self):
-        """
-        The L{IListeningPort} object is an instance of a class with no
-        classic classes in its hierarchy.
-        """
-        reactor = self.buildReactor()
-        port = self.getListeningPort(reactor, ServerFactory())
-        self.assertFullyNewStyle(port)
-
     @skipIf(SKIP_EMFILE, "Reserved EMFILE file descriptor not supported on Windows.")
     def test_closePeerOnEMFILE(self):
         """
@@ -1500,9 +1490,7 @@ class TCPPortTestsMixin:
     Tests for L{IReactorTCP.listenTCP}
     """
 
-    requiredInterfaces = (
-        IReactorTCP,
-    )  # type: Optional[Sequence[Type[Interface]]]  # noqa
+    requiredInterfaces: Optional[Sequence[Type[Interface]]] = (IReactorTCP,)
 
     def getExpectedStartListeningLogMessage(self, port, factory):
         """
@@ -1514,7 +1502,7 @@ class TCPPortTestsMixin:
         """
         Get the expected connection lost message for a TCP port.
         """
-        return "(TCP Port %s Closed)" % (port.getHost().port,)
+        return f"(TCP Port {port.getHost().port} Closed)"
 
     def test_portGetHostOnIPv4(self):
         """
@@ -1587,7 +1575,7 @@ class TCPPortTestsMixin:
         client.setblocking(False)
         try:
             connect(client, (port.getHost().host, port.getHost().port))
-        except socket.error as e:
+        except OSError as e:
             self.assertIn(e.errno, (errno.EINPROGRESS, errno.EWOULDBLOCK))
 
         self.runReactor(reactor)
@@ -1669,7 +1657,7 @@ class TCPPortTestsMixin:
         client.setblocking(False)
         try:
             connect(client, (port.getHost().host, port.getHost().port))
-        except socket.error as e:
+        except OSError as e:
             self.assertIn(e.errno, (errno.EINPROGRESS, errno.EWOULDBLOCK))
         self.runReactor(reactor)
         return factory.address
@@ -1767,7 +1755,6 @@ class TCPPortTestsBuilder(
     ReactorBuilder,
     ListenTCPMixin,
     TCPPortTestsMixin,
-    ObjectModelIntegrationMixin,
     StreamTransportTestsMixin,
 ):
     pass
@@ -1777,7 +1764,6 @@ class TCPFDPortTestsBuilder(
     ReactorBuilder,
     SocketTCPMixin,
     TCPPortTestsMixin,
-    ObjectModelIntegrationMixin,
     StreamTransportTestsMixin,
 ):
     pass
@@ -2066,9 +2052,7 @@ class WriteSequenceTestsMixin:
     Test for L{twisted.internet.abstract.FileDescriptor.writeSequence}.
     """
 
-    requiredInterfaces = (
-        IReactorTCP,
-    )  # type: Optional[Sequence[Type[Interface]]]  # noqa
+    requiredInterfaces: Optional[Sequence[Type[Interface]]] = (IReactorTCP,)
 
     def setWriteBufferSize(self, transport, value):
         """
@@ -2738,7 +2722,7 @@ class AbortConnectionMixin:
     """
 
     # Override in subclasses, should be an EndpointCreator instance:
-    endpoints = None  # type: Optional[EndpointCreator]
+    endpoints: Optional[EndpointCreator] = None
 
     def runAbortTest(self, clientClass, serverClass, clientConnectionLostReason=None):
         """
@@ -3010,7 +2994,7 @@ class BuffersLogsTests(SynchronousTestCase):
                 self.assertFalse(self.events)
                 raise TestException()
 
-        self.assertEqual(1, len(self.events))  # type: ignore[unreachable]
+        self.assertEqual(1, len(self.events))
         [event] = self.events
         self.assertEqual(event["log_format"], "An event")
         self.assertEqual(event["log_namespace"], self.namespace)
@@ -3166,7 +3150,7 @@ class FileDescriptorReservationTests(SynchronousTestCase):
             with reservedFD:
                 raise AllowedException()
 
-        errors = self.flushLoggedErrors(SuppressedException)  # type: ignore[unreachable]
+        errors = self.flushLoggedErrors(SuppressedException)
         self.assertEqual(len(errors), 1)
 
 

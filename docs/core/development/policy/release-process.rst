@@ -4,8 +4,6 @@ Twisted Release Process
 This document describes the Twisted release process.
 Although it is still incomplete, every effort has been made to ensure that it is accurate and up-to-date.
 
-This process has only been tested on Linux or macOS, so we recommend that you do the release on Linux or macOS.
-
 If you want to make changes to the release process, follow the normal Twisted development process (contribute release automation software that has documentation and unit tests demonstrating that it works).
 
 
@@ -14,14 +12,10 @@ Outcomes
 
 By the end of a Twisted release we'll have:
 
-- Tarballs for Twisted as a whole, and for each of its sub-projects
-- Windows installers for the whole Twisted project
-- Updated documentation (API & howtos) on the twistedmatrix.com site
-- Updated documentation on Read The Docs
-- Updated download links on the twistedmatrix.com site
-- Announcement emails sent to major Python lists
-- Announcement post on `the Twisted blog <http://labs.twistedmatrix.com>`_
-- A tag in our Git repository marking the release
+- Wheel and sdist package published on `PyPI Twisted project <https://pypi.org/project/Twisted/>`_.
+- Updated documentation (API & howtos) on `Twisted Read The Docs <https://docs.twistedmatrix.com/>`_ for `stable` and `$RELEASE` versions.
+- Announcement email sent to Twisted main list
+- A `GitHub Release <https://github.com/twisted/twisted/releases>`_ with the associated tag in our Git repository
 
 
 Prerequisites
@@ -29,26 +23,43 @@ Prerequisites
 
 To release Twisted, you will need:
 
-- Commit privileges to Twisted
-- Access to ``dornkirk.twistedmatrix.com`` as t-web
-- Permissions to edit the Downloads wiki page
-- Channel operator permissions for ``#twisted``
-- Admin privileges for Twisted's PyPI packages
-- Contributor status for `the Twisted blog <http://labs.twistedmatrix.com>`_
-- Read The Docs access for the Twisted project
+- Commit privileges to Twisted GitHub repository.
+
+
+Dependencies
+------------
+
+Below is the list of moving parts and web services used by the release process.
+For day to day operation, you should not need management access to them.
+If things go wrong, you should be aware of them and get administration access.
+
+* Release tag is automatically created via the GitHub Release GUI.
+* PyPi file publishing is done via GitHub Actions workflow when a tag is created.
+  Any Twisted contributor in GitHub should have access to modify the workflow.
+* docs.twistedmatrix.com is a CNAME and you will need access to Twisted DNS server to modify it.
+* Documentation is published via `Read The Docs Twisted project <https://readthedocs.org/dashboard/twisted/edit/>`_.
+  There is an `automated rule <https://readthedocs.org/dashboard/twisted/rules/regex/1057/>` to activate the documentation for every tag matching ``^twisted-\d+\.\d+\.\d+$`` (release candidates are excluded)
+  From RTD `Advanced Settings <https://readthedocs.org/dashboard/twisted/advanced/>`_ the branch named `stable` is configured as the default branch.
+  There is also a "active" documentation version for the branch named `stable`.
 
 
 Version numbers
 ---------------
 
-Twisted releases use a time-based numbering scheme.
-Releases versions like YY.MM.mm, where YY is the last two digits of the year of the release, MM is the month of release, and mm is the number of the patch release.
+Twisted releases use a time-based numbering scheme following PEP440 convention.
+Releases versions like YY.MM.mm, where YY is the last two digits of the year of the release, MM is the month of release, and mm is the number of the bugfix release.
+
+There are 3 release types:
+
+- Major release when YY.MM is updated.
+- Bugfix / patch / point release when the mm number is updated
+- Release candidates which are pre-releases as YY.MM.mmrc1
 
 For example:
 
 - A release in Jan 2017 is 17.1.0
 - A release in Nov 2017 is 17.11.0
-- If 17.11.0 has some critical defects, then a patch release would be numbered 17.11.1
+- If 17.11.0 has some critical defects, then a bugfix 17.11.1
 - The first release candidate of 17.1.0 is 17.1.0rc1, the second is 17.1.0rc2
 
 Every release of Twisted includes the whole project.
@@ -75,93 +86,121 @@ To release Twisted, we
 Prepare for a release
 ---------------------
 
-#. Check the milestone for the upcoming release
+#. Check for any regressions using `Trac regression report <https://twistedmatrix.com/trac/report/26>`_
 
-   - Get rid of any non-critical bugs
-   - Get any critical bugs fixed
-   - Check the release manager notes in case anyone has left anything which can only be done during the release.
-
-#. Check for any ​regressions
-
-#. Read through the ``INSTALL.rst`` and ``README.rst`` files to make sure things like the supported Python versions are correct
-
-   - Check the required Python version.
-   - Check that the list matches the current set of buildbots.
-   - Any mistakes should be fixed in trunk before making the release branch
+#. Any regression should be fixed and merged into trunk before making the release branch
 
 #. Choose a version number.
+   $RELEASE will be something like 21.7.0 for a major release.
+   $RELEASE will be something like 21.7.1 for a bugfix release.
 
-#. File a ticket
+#. File a ticket in Trac called "Release $RELEASE" and assign it to yourself.
 
-   - Assign it to the upcoming release milestone
-   - Assign it to yourself
-   - Call it "Release $RELEASE"
-
-#. Make a branch and attach it to the ticket:
+#. Make a branch for the release.
+   It's very important to use `release-$RELEASE-$TRAC_ID` as the branch name (4290 is Trac ticket ID, 21.7.0 is the release number) as this is used as a hint for CI:
 
    - ``git fetch origin``
    - ``git checkout origin/trunk``
-   - ``git checkout -b release-$RELEASE-4290``
+   - ``git checkout -b release-21.7.0-4290``
 
 
 How to do a release candidate
 -----------------------------
 
-#. Check ​buildbot to make sure all supported platforms are green (wait for pending builds if necessary).
-#. If a previously supported platform does not currently have a buildbot, move from supported platforms to "expected to work" in ``INSTALL.rst``.
+
+This section describes the steps and requirements for creating the first release candidate.
+
+
+Prepare the branch
+~~~~~~~~~~~~~~~~~~
+
+#. Check that all the CI tests on the main branch (trunk) pass.
+   Failing tests on the main branch should be considered release blocker.
+   They should be fixed in separate ticket/PR.
+   The release can continue once the main branch is green again.
 #. In your Git repo, fetch and check out the new release branch.
 #. Run ``python -m incremental.update Twisted --rc``
 #. Commit the changes made by Incremental.
-#. Run ``towncrier``.
-#. Commit the changes made by towncrier - this automatically removes the NEWS newsfragments.
-#. Bump copyright dates in ``LICENSE``, ``twisted/copyright.py``, and ``README.rst`` if required
-#. Push the changes up to GitHub.
-#. Run ``python setup.py sdist --formats=bztar -d /tmp/twisted-release`` to build the tarballs.
-#. Copy ``NEWS.rst`` to ``/tmp/twisted-release/`` for people to view without having to download the tarballs.
-   (e.g. ``cp NEWS.rst /tmp/twisted-release/NEWS.rst``)
-#. Upload the tarballs to ``twistedmatrix.com/Releases/rc/$RELEASE`` (see #4353)
+#. Run ``tox -e towncrier``.
+#. Commit the changes made by towncrier - this automatically removes the newsfragment files.
+#. Bump copyright dates in ``LICENSE``, ``src/twisted/copyright.py``, and ``README.rst`` if required
+#. Push the changes up to GitHub and create a new release PR.
+#. The GitHub PR is dedicated to the final release and the same PR is used to release the candidate and final version.
+#. Wait for all the PR checks to pass.
+#. If a check fails investigate it.
+   If is just a flaky tests, retry the run.
+   Any serious error should be considered a blocker and should be
+   fixed in a separate ticket/PR.
+   Avoid making non-release changes (even minor one) as part of the release branch.
+#. Use the `GitHub Create Release UI <https://github.com/twisted/twisted/releases/new>`_ the make a new release.
+#. Create a tag using the format `twisted-VERSION` based on the latest commit on the release branch.
+#. Use `Twisted VERSION` as the name of the release.
+#. Add the release NEWS to GitHub Release page.
+#. Make sure 'This is a pre-release` is checked.
+#. Github Actions will upload the dist to PyPI when a new tag is pushed to the repo.
+#. You can check the status of the automatic upload via `GitHub Action <https://github.com/twisted/twisted/actions/workflows/test.yaml?query=event%3Apush>`_
+#. Read the Docs hooks not have version for the release candidate.
+   Use the Read the Docs published for the pull request.
+#. The review for the PR will be requested after the files are on PyPI so that a full review and manual test can be done.
+#. Most probably there will be some minor comments received via email or GitHub regarding the final content of the release notes.
+   It's OK to make those changes as part of the release branch.
+   It's OK to update the text of the candidate release notes,
+   in the final NEWS file the release candidate version is removed and replaced with the final version.
+   No need for a new ticket or separate pull request.
+   These changes will be reviewed as part of the final release review process.
+#. While the final public release is not made and the release tag created
+   the release branch will not be kept up to date with trunk.
 
-   - You can use ``rsync --rsh=ssh --partial --progress -av /tmp/twisted-release/ t-web@dornkirk.twistedmatrix.com:/srv/t-web/data/releases/rc/<RELEASE>/`` to do this.
-#. Write the release candidate announcement
 
-   - Read through the NEWS file and summarize the interesting changes for the release
-   - Get someone else to look over the announcement before doing it
+Announce
+~~~~~~~~
+
+#. Write the release announcement
+
 #. Announce the release candidate on
 
-   - the twisted-python mailing list
-   - on IRC in the ``#twisted`` topic
+   - the twisted-python mailing list by sending the an email with the subject: Twisted $RELEASE Pre-Release Announcement
+   - on IRC in the ``#twisted-dev`` topic by sending the version number or pip install command
 
-Release candidate announcement
-------------------------------
+The release candidate announcement might mention the important changes since the last release, and ask readers to test this release candidate.
 
-The release candidate announcement should mention the important changes since the last release, and exhort readers to test this release candidate.
+Here's what the $RELEASE release candidate announcement might look like::
 
-Here's what the $RELEASErc1 release announcement might look like::
+   On behalf of the Twisted contributors I announce the release candidate of Twisted $RELEASE
 
-    Live from PyCon Atlanta, I'm pleased to herald the approaching
-    footsteps of the $API release.
+   Short summary of the release.
+   For example:
+   Python 3.5 is no longer a supported platform.
+   The minimum supported platform is Python 3.6.7.
 
-    Tarballs for the first Twisted $RELEASE release candidate are now available at:
-     http://people.canonical.com/~jml/Twisted/
 
-    Highlights include:
+   The notable changes are:
 
-     * Improved documentation, including "Twisted Web in 60 seconds"
+   * Mention the main new features.
+   * As well as important bug fixes
+   * Or deprecation/removals
 
-     * Faster Perspective Broker applications
+   The release and NEWS file is available for review at
 
-     * A new Windows installer that ships without zope.interface
+      https://github.com/twisted/twisted/pull/PRID/files
 
-     * Twisted no longer supports Python 2.3
+   Release candidate documentation is available at
 
-     * Over one hundred closed tickets
+      https://twisted--PRID.org.readthedocs.build/en/PRID/
 
-    For more information, see the NEWS file.
+   Wheels for the release candidate are available on PyPI
 
-    Please download the tarballs and test them as much as possible.
+      https://pypi.org/project/Twisted/$RELEASErc1
 
-    Thanks,
-    jml
+      python -m pip install Twisted==$RELEASErc1
+
+   Please test it and report any issues.
+   If nothing comes up in one week,
+   $RELEASE will be released based on the latest release candidate.
+
+   Many thanks to everyone who had a part in Twisted
+   the supporters of the Twisted Software Foundation,
+   the developers, and all the people testing and building great things with Twisted!
 
 A week is a generally good length of time to wait before doing the final release.
 
@@ -169,207 +208,81 @@ A week is a generally good length of time to wait before doing the final release
 How to do a final release
 -------------------------
 
+
 Prepare the branch
 ~~~~~~~~~~~~~~~~~~
 
 #. Have the release branch, previously used to generate a release candidate, checked out
-#. Run ``python -m incremental.update Twisted``.
-#. Revert the release candidate newsfile changes, in order.
-#. Run ``towncrier`` to make the final newsfile.
-#. Add the quote of the release to the ``README.rst``
-#. Make a new quote file for the next version
-
-   - ``git mv docs/fun/Twisted.Quotes docs/historic/Quotes/Twisted-$API; echo '' > docs/fun/Twisted.Quotes; git add docs/fun/Twisted.Quotes``
-
-#. Commit the version and ``README.rst`` changes.
-#. Submit the ticket for review
+#. Run ``python -m incremental.update Twisted --newversion $RELEASE``
+#. Manually update the release version and date inside the NEWS file.
+   The release candidate notes will be removed from the final NEWS file.
+   Manually move all the release notes from the release candidates to the notes for the final version.
+#. Commit and push.
+#. Submit the ticket for the final review.
 #. Pause until the ticket is reviewed and accepted.
-#. Tag the release.
-
-   - ``git tag -s twisted-$RELEASE -m "Tag $RELEASE release"``
-   - ``git push --tags``
-
-
-Cut the tarballs & installers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-#. Using a checkout of the release branch or the release tag (with no local changes!), build the tarballs:
-
-   - ``python setup.py sdist --formats=bztar -d /tmp/twisted-release``
-
-#. Build Windows wheel
-
-   - Download the latest ``.whl`` files from `Buildbot <https://buildbot.twistedmatrix.com/builds/twisted-packages/>`_ and save them in the staging directory
-
-#. Sign the tarballs and Windows installers.
-   (You will need a PGP key for this - use something like Seahorse to generate one, if you don't have one.)
-
-   - MD5: ``md5sum Tw* | gpg -a --clearsign > /tmp/twisted-release/twisted-$RELEASE-md5sums.txt``
-   - SHA512: ``shasum -a 512 Tw* | gpg -a --clearsign > /tmp/twisted-release/twisted-$RELEASE-shasums.txt``
-   - Compare these to an ​example of ``twisted-$RELEASE-md5sums.txt`` - they should look the same.
-
-
-Update documentation
-~~~~~~~~~~~~~~~~~~~~
-
-#. Get the dependencies
-
-   - PyDoctor (from PyPI)
-
-#. Build the documentation
-
-   - ``./bin/admin/build-docs .``
-   - ``cp -R doc /tmp/twisted-release/``
-
-#. Run the build-apidocs script to build the API docs and then upload them (See also #2891).
-
-   - Copy the pydoctor directory from the twisted branch into your Git checkout.
-   - ``./bin/admin/build-apidocs . /tmp/twisted-release/api``
-   - Documentation will be generated in a directory called ``/tmp/twisted-release/api``
-
-#. Update the Read The Docs default to point to the release branch (via the `dashboard <https://readthedocs.org/projects/twisted/>`_).
-
-
-Distribute
-~~~~~~~~~~
-
-#. Create a tarball with the contents of the release directory: ``cd /tmp/twisted-release; tar -cvjf ../release.tar.bz2 *``
-
-#. Upload to the official upload locations (see #2888)
-
-   - ``cd ~; git clone https://github.com/twisted-infra/braid``
-   - ``cd braid``
-   - ``virtualenv ~/dev/braid; source ~/dev/braid/bin/activate; cd ~/braid; python setup.py develop;``
-   - ``cd ~/braid; fab config.production t-web.uploadRelease:$RELEASE,/tmp/release.tar.bz2``
-
-#. Test the generated docs
-
-   - Browse to ``http://twistedmatrix.com/documents/$RELEASE/``
-   - Make sure that there is content in each of the directories and that it looks good
-   - Follow each link on `the documentation page <https://twistedmatrix.com/trac/wiki/Documentation>`_, replace current with ``$RELEASE`` (e.g. 10.0.0) and look for any obvious breakage
-
-#. Change the "current" symlink
-
-   - Upload release: ``fab config.production t-web.updateCurrentDocumentation:$RELEASE``
+#. Use the `GitHub Create Release UI <https://github.com/twisted/twisted/releases/new>`_ the make a new release.
+#. Create a tag using the format `twisted-VERSION` based on the latest commit on the release branch that was approved after the review.
+#. Use `Twisted VERSION` as the name of the release.
+#. Add the release NEWS to GitHub Release page.
+#. Make sure 'This is a pre-release` is not checked.
+#. Github Actions will upload the dist to PyPI when a new tag is pushed to the repo. PyPI is the only canonical source for Twisted packages.
+#. Read the Docs hooks will publish a new version of the docs for the tag.
 
 
 Announce
 ~~~~~~~~
 
-#. Update Downloads pages
-
-   - The following updates are automatic, due to the use of the ​ProjectVersion wiki macro throughout most of the Downloads page.
-
-     - Text references to the old version to refer to the new version
-     - The link to the NEWS file to point to the new version
-     - Links and text to the main tarball
-
-   - Add a new md5sum link
-   - Add a new shasum link
-   - Save the page, check all links
-
-#. Update PyPI records & upload files
-
-   - ``pip install -U twine``
-   - ``twine upload /tmp/twisted-release/Twisted-$RELEASE*``
-
-#. Write the release announcement (see below)
+#. Write the release announcement that should be similar to the release candidate, with the updated version and release date.
 
 #. Announce the release
 
-   - Send a text version of the announcement to: twisted-python@twistedmatrix.com, python-announce-list@python.org, python-list@python.org, twisted-web@twistedmatrix.com
-   - ​http://labs.twistedmatrix.com (Post a web version of the announcements, with links instead of literal URLs)
-   - Twitter, if you feel like it
-   - ``#twisted`` topic on IRC (you'll need ops)
-
-#. Run ``python -m incremental Twisted --dev`` to add a `dev0` postfix.
-
-#. Commit the dev0 update change.
-
-#. Merge the release branch into trunk, closing the release ticket at the same time.
-
-#. Close the release milestone (which should have no tickets in it).
-
-#. Open a milestone for the next release.
+   - Send a text version of the announcement to: twisted@python.org
+   - Twitter, TikTok, Instagram, Snapchat if you feel like it :)
+   - ``#twisted`` message on IRC
 
 
-Release announcement
-~~~~~~~~~~~~~~~~~~~~
+Post release
+~~~~~~~~~~~~
 
-The final release announcement should:
+#. Run ``python -m incremental.update Twisted --post`` to add a `post` version number.
 
-- Mention the version number
-- Include links to where the release can be downloaded
-- Summarize the significant changes in the release
-- Consider including the quote of the release
-- Thank the contributors to the release
+#. Commit the post0 update change.
 
-Here's an example::
+#. Update the trunk into the release branch, resolving any possible conflicts.
 
-    On behalf of Twisted Matrix Laboratories, I am honoured to announce
-    the release of Twisted 13.2!
+#. No need to request another review.
 
-    The highlights of this release are:
-
-     * Twisted now includes a HostnameEndpoint implementation which uses
-    IPv4 and IPv6 in parallel, speeding up the connection by using
-    whichever connects first (the 'Happy Eyeballs'/RFC 6555 algorithm).
-    (#4859)
-
-     * Improved support for Cancellable Deferreds by kaizhang, our GSoC
-    student. (#4320, #6532, #6572, #6639)
-
-     * Improved Twisted.Mail documentation by shira, our Outreach Program
-    for Women intern. (#6649, #6652)
-
-     * twistd now waits for the application to start successfully before
-    exiting after daemonization. (#823)
-
-     * SSL server endpoint string descriptions now support the
-    specification of chain certificates. (#6499)
-
-     * Over 70 closed tickets since 13.1.0.
-
-    For more information, check the NEWS file (link provided below).
-
-    You can find the downloads at <https://pypi.python.org/pypi/Twisted>
-    (or alternatively <http://twistedmatrix.com/trac/wiki/Downloads>) .
-    The NEWS file is also available at
-    <http://twistedmatrix.com/Releases/Twisted/13.2/NEWS.txt>.
-
-    Many thanks to everyone who had a part in this release - the
-    supporters of the Twisted Software Foundation, the developers who
-    contributed code as well as documentation, and all the people building
-    great things with Twisted!
-
-    Twisted Regards,
-    HawkOwl
+#. Merge the release branch into trunk (via GitHub PR UI),
+   closing the release ticket at the same time.
 
 
-When things go wrong
---------------------
+Release candidate fixes
+-----------------------
 
-If you discover a showstopper bug during the release process, you have three options.
+This section described the steps to follow when after a release candidate is published, critical or regression defects are found.
 
-1. Abort the release, make a new point release (e.g. abort 10.0.0, make 10.0.1 after the bug is fixed)
-2. Abort the release, make a new release candidate (e.g. abort 10.0.0, make 10.0.0pre3 after the bug is fixed)
-3. Interrupt the release, fix the bug, then continue with it (e.g. release 10.0.0 with the bug fix)
+If a defect is found after the final release is published, check the next section: `Bug fix releases`.
 
-If you choose the third option, then you should:
+1. Pause the release process.
+2. Separate tickets should be files for each defect.
+3. The defect should be fixed, reviewed and merged in trunk.
+4. On the release branch, cherry-pick the merges from trunk that merges the fixes `git cherry-pick -m 1 TRUNK_MERGE_SHA`.
+5. Follow the same steps as for any release candidate, with the exception that a new branch is not created.
+   Use the same `python -m incremental.update Twisted --rc` command to increment the release candidate version.
 
-- Delete the tag for the release
-- Recreate the tag from the release branch once the fix has been applied to that branch
+Don't delete a tag that was already pushed for a release.
+Create a new tag with incremented version.
 
 
 Bug fix releases
 ----------------
 
 Sometimes, bugs happen, and sometimes these are regressions in the current released version.
-This section goes over doing these "point" releases.
+This section goes over doing these "bugfix" releases.
 
 1. Ensure all bugfixes are in trunk.
 
-2. Make a branch off the affected version.
+2. Make a branch off the affected released version (not from trunk HEAD).
 
 3. Cherry-pick the merge commits that merge the bugfixes into trunk, onto the new release branch.
 
@@ -377,19 +290,8 @@ This section goes over doing these "point" releases.
 
    - Instead of just ``--rc`` when running the change-versions script, add the patch flag, making it ``--patch --rc``.
    - Instead of waiting a week, a shorter pause is acceptable for a patch release.
+     You can do the release as soon as you get the confirmation from the original bug reports that the release candidate fixes the issues.
 
-
-Open questions
---------------
-
-- How do we manage the case where there are untested builds in trunk?
-
-- Should picking a release quote be part of the release or the release candidate?
-
-- What bugs should be considered release blockers?
-
-  - All bugs with a type from the release blocker family
-  - Anybody can create/submit a new ticket with a release blocker type
-  - Ultimately it's the RM's discretion to accept a ticket as a release blocker
-
-- Should news fragments contain information about who made the changes?
+5. If you are doing a security release for an older release,
+   the automated release will overwrite the `stable` branch and consider it as the latest release.
+   You will need to manually reset/rebase the `stable` branch to point to the actual latest release.
