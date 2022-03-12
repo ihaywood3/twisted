@@ -859,6 +859,69 @@ output  {obl}
     d.addErrback(eb_common, packet)
 
 
+def smb_query_directory(packet, resp_type):
+    fd = packet.ctx["files"][packet.body.file_id]
+    try:
+        info_class = smbtypes.InfoClassFiles(packet.body.info_class)
+    except ValueError:
+        raise base.SMBError("info_class", smbtypes.NTStatus.INVALID_INFO_CLASS)
+    glob = packet.data[
+        packet.body.offset : packet.body.offset + packet.body.length
+    ].decode("utf-16le")
+    log.debug(
+        """
+QUERY DIRECTORY
+---------------
+size    {sz}
+file id {file_id}
+flags   {flags:04x}
+file    {fd!r}
+class   {info_class}
+output  {obl}
+index   {index}
+glob    {glob}
+""",
+        sz=packet.body.size,
+        file_id=packet.body.file_id,
+        flags=packet.body.flags,
+        fd=fd,
+        info_class=info_class,
+        obl=packet.body.output_buffer_length,
+        glob=glob,
+    )
+
+    def cb_dir(resplist):
+        def each_resp(resp):
+            if hasattr(resp, "extra"):
+                extra = resp.extra
+                if type(extra) is str:
+                    extra = extra.encode("utf-16le")
+                resp.buflen = len(extra)
+            else:
+                extra = b""
+            return base.pack(resp) + extra
+
+        data = b"".join(each_resp(i) for i in resplist)
+        if len(data) > packet.body.output_buffer_length:
+            raise base.SMBError(
+                "output buffer too long", smbtypes.NTStatus.BUFFER_OVERFLOW
+            )
+        packet.data = base.pack(resp_type(length=len(data))) + data
+        sendHeader(packet)
+
+    func_name = "dir" + info_class.name
+    try:
+        func = getattr(fd, func_name)
+    except AttributeError:
+        raise base.SMBError(
+            "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
+        )
+    d = maybeDeferred(func, glob)
+    # NOTE: dirXXX functions return a *list* of attr'ed data objects
+    d.addCallback(cb_dir)
+    d.addErrback(eb_common, packet)
+
+
 def smb_ioctl(packet, resp_type):
     # this is a minimal implementation to satisfy clients that insist on
     # trying to obtain DFS
