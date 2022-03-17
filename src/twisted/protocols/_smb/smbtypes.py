@@ -876,3 +876,113 @@ class FileAllInformation:
     # FileNamesInformation
     file_name_len = medium()
     file_name = endstring()
+
+
+#  directory types
+
+
+@attr.s
+class FileDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()  # generally no meaning and so 0 on non-Windows FS
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    file_name = endstring()
+
+
+@attr.s
+class FileBothDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    ea_size = medium()  # can be 0
+    short_name_len = byte()
+    reserved = byte()
+    short_name = octets(24)
+    file_name = endstring()
+
+
+@attr.s
+class FileFullDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    ea_size = medium()  # can be 0
+    file_name = endstring()
+
+
+@attr.s
+class FileIdBothDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    ea_size = medium()  # can be 0
+    short_name_len = byte()
+    reserved1 = byte()
+    short_name = octets(24)
+    reserved2 = short()
+    file_id = long()
+    file_name = endstring()
+
+
+@attr.s
+class FileIdExtdDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    ea_size = medium()  # can be 0
+    reparse_point_tag = medium()
+    file_id = octets(16)  # 0 on non-Windows FS
+    file_name = endstring()
+
+
+@attr.s
+class FileIdFullDirectoryInformation:
+    next_entry_offset = medium()
+    file_index = medium()
+    ctime = long()
+    atime = long()
+    wtime = long()
+    mtime = long()
+    end_of_file = long()
+    alloc_size = long()
+    attributes = medium()
+    file_name_len = medium()
+    ea_size = medium()  # can be 0
+    reserved = medium()
+    file_id = long()
+    file_name = endstring()
