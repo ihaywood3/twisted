@@ -20,6 +20,7 @@ from twisted.protocols._smb import (
     dcerpc,
     smbtypes,
     vfs,
+    shim,
 )
 from twisted.protocols._smb.ismb import ISMBServer, NoSuchShare
 
@@ -139,6 +140,23 @@ class TestBase(unittest.TestCase):
         # 2020/4/17 10:01:44.388458
         epoch = calendar.timegm((2020, 4, 17, 10, 1, 44.388458, 0, -1, 0))
         self.assertEqual(base.unixToNTTime(epoch), nttime)
+
+
+class TestShim(unittest.TestCase):
+    def test_short_name(self):
+        ds = shim.DirShim(None, None, None)
+
+        def assert_ds(a, b):
+            self.assertEqual(ds._make_short_name(a), b)
+
+        assert_ds("Document", "DOCUMENT.TXT")
+        assert_ds("Haywood Report.doc", "HYWDRPRT.DOC")
+        assert_ds("Long Fake File Name.tex", "LNGFKLNM.TEX")
+        for i in range(1, 10):
+            assert_ds("Long Fake File Name.tex", "LNGFKNM%d.TEX" % i)
+        for i in range(10, 100):
+            assert_ds("Long Fake File Name.tex", "LNGFKM%d.TEX" % i)
+        assert_ds("Long Fake File Name.tex", "L0000102.TEX")
 
 
 # captured auth packets from Windows 10 <-> Samba session
@@ -393,7 +411,9 @@ class TestSambaClient(unittest.TestCase):
         users_checker.addUser(TESTUSER, TESTPASSWORD)
         p.registerChecker(users_checker, credentials.IUsernameHashedPassword)
         self.factory = core.SMBFactory(p)
-        self.port = port = reactor.listenTCP(TESTPORT, self.factory)
+        self.port = port = reactor.listenTCP(
+            TESTPORT, self.factory, interface="127.0.0.1"
+        )
         self.addCleanup(port.stopListening)
 
     def tearDown(self):
@@ -463,6 +483,10 @@ class TestSambaClient(unittest.TestCase):
         d.addCallback(cb_get)
         return d
 
+    def test_dir(self):
+        d = self.smbclient([(PROMPT, "ls\n"), (PROMPT, "quit\n")])
+        return d
+
 
 if __name__ == "__main__":
     r = TestRealm()
@@ -471,5 +495,7 @@ if __name__ == "__main__":
     users_checker.addUser(TESTUSER, TESTPASSWORD)
     p.registerChecker(users_checker, credentials.IUsernameHashedPassword)
     factory = core.SMBFactory(p)
-    port = reactor.listenTCP(445, factory)
+    port = reactor.listenTCP(445, factory, interface="127.0.0.1")
+    port2 = reactor.listenTCP(445, factory, interface="192.168.178.200")
+    port3 = reactor.listenTCP(445, factory, interface="::")
     reactor.run()

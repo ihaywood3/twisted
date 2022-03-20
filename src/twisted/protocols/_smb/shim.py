@@ -116,18 +116,26 @@ class FilesystemShim:
             raise base.SMBError("file not found", smbtypes.NTStatus.NO_SUCH_FILE)
 
         def cb_file(attrs, action):
-            d = self.__vfs.openFile(path, flags)
-            d.addCallback(cb_addshim, action, attrs)
-            d.addErrback(eb_addshim)
-            return d
+            if attrs and stat.S_ISDIR(attrs["permissions"]) > 0:
+                return succeed(
+                    (DirShim(self.__vfs, attrs, path), smbtypes.CreateAction.Opened)
+                )
+            else:
+                d = self.__vfs.openFile(path, flags)
+                d.addCallback(cb_addshim, action, attrs)
+                d.addErrback(eb_addshim)
+                return d
 
         def eb_file(failure):
             log.failure("eb_file", failure)
-            failure.trap(FileNotFoundError)
-            d = self.__vfs.openFile(path, flags)
-            d.addCallback(cb_addshim, smbtypes.CreateAction.Created, None)
-            d.addErrback(eb_addshim)
-            return d
+            if flags & os.O_CREAT:
+                failure.trap(FileNotFoundError)
+                d = self.__vfs.openFile(path, flags)
+                d.addCallback(cb_addshim, smbtypes.CreateAction.Created, None)
+                d.addErrback(eb_addshim)
+                return d
+            else:
+                failure.raiseException()
 
         if def_action == smbtypes.CreateAction.Created:
             return cb_file(None, def_action)
@@ -138,41 +146,10 @@ class FilesystemShim:
             return d2
 
 
-class FileShim:
-    def __init__(self, fd, path):
-        self.__fd = fd
-        self.init_attr = None
-        self.path = path
-        self.is_dir = False
-        self.delete_pending = 0
-
-    def setInitialAttrs(self, attrs):
-        self.init_attr = attrs
-
-    def read(self, offset, length):
-        return self.__fd.readChunk(offset, length)
-
-    def write(self, offset, data):
-        return self.__fd.writeChunk(offset, data)
-
-    def flush(self):
-        return self.__fd.flush()
-
-    def close(self):
-        return self.__fd.close()
-
-    def getFileStandardInformation(self):
-        def cb_attr(a):
-            return smbtypes.FileStandardInformation(
-                alloc_size=a.get("ext_blksize", smbtypes.CLUSTER_SIZE),
-                end_of_file=a["size"],
-                delete_pending=self.delete_pending,
-                links=a.get("ext_nlinks", 1),
-            )
-
-        d = self.__fd.getAttrs()
-        d.addCallback(cb_attr)
-        return d
+class CommonShim:
+    """
+    an abstract common ancestor for DirShim and FileShim
+    """
 
     def _a2attrib(self, a):
         """
@@ -190,6 +167,15 @@ class FileShim:
             attributes = smbtypes.FILE_ATTRIBUTE_NORMAL
         return attributes
 
+    def _getAttrs(self):
+        """get attributes of directory/file"""
+        if self.init_attrs:
+            a = self.init_attrs
+            self.init_attrs = None
+            return succeed(a)
+        else:
+            return self._getAttrs_actual()
+
     def getFileNetworkOpenInformation(self):
         def cb_fnoi(a):
             return smbtypes.FileNetworkOpenInformation(
@@ -202,14 +188,9 @@ class FileShim:
                 attributes=self._a2attrib(a),
             )
 
-        if self.init_attr:
-            r = cb_fnoi(self.init_attr)
-            self.init_attr = None
-            return succeed(r)
-        else:
-            d = self.__fd.getAttrs()
-            d.addCallback(cb_fnoi)
-            return d
+        d = self._getAttrs()
+        d.addCallback(cb_fnoi)
+        return d
 
     def getFileBasicInformation(self):
         def cb_fbi(a):
@@ -221,7 +202,7 @@ class FileShim:
                 attributes=self._a2attrib(a),
             )
 
-        d = self.__fd.getAttrs()
+        d = self._getAttrs()
         d.addCallback(cb_fbi)
         return d
 
@@ -258,6 +239,101 @@ class FileShim:
                 file_name=os.path.basename(self.path),
             )
 
-        d = self.__fd.getAttrs()
+        d = self._getAttrs()
         d.addCallback(cb_fai)
         return d
+
+    def getFileStandardInformation(self):
+        def cb_attr(a):
+            return smbtypes.FileStandardInformation(
+                alloc_size=a.get("ext_blksize", smbtypes.CLUSTER_SIZE),
+                end_of_file=a["size"],
+                delete_pending=self.delete_pending,
+                links=a.get("ext_nlinks", 1),
+            )
+
+        d = self._getAttrs()
+        d.addCallback(cb_attr)
+        return d
+
+
+class DirShim(CommonShim):
+    def __init__(self, vfs, attrs, path):
+        self.__vfs = vfs
+        self.init_attrs = attrs
+        self.path = path
+        self.is_dir = True
+        self.delete_pending = 0
+        self.short_names = set()
+
+    def _getAttrs_actual(self):
+        return self.__vfs.getAttrs(self.path)
+
+    def _make_short_name(self, long_name):
+        s1 = long_name.upper().replace(" ", "")
+        l = s1.split(".")
+        if len(l) == 1:
+            ext = "TXT"
+            name = s1
+        else:
+            ext = l[-1]
+            name = l[0]
+        if ext == "JPEG":
+            ext = "JPG"
+        if ext == "DOCX":
+            ext = "DOX"
+        if len(ext) > 3:
+            ext = ext[:3]
+        if len(name) > 8:
+            # first, try stripping out the vowels
+            for i in "AEIOU":
+                name = name.replace(i, "")
+            # next, cut out the middle
+            if len(name) > 8:
+                name = name[0:5] + name[-3:]
+            if name + "." + ext in self.short_names:
+                # uh-oh, a duplicate
+                base = name[:5] + name[-2:]
+                for i in range(1, 10):
+                    fname = "%s%d.%s" % (base, i, ext)
+                    if fname not in self.short_names:
+                        self.short_names.add(fname)
+                        return fname
+                base = name[:5] + name[-1:]
+                for i in range(10, 100):
+                    fname = "%s%d.%s" % (base, i, ext)
+                    if fname not in self.short_names:
+                        self.short_names.add(fname)
+                        return fname
+                # seriously...
+                name = "%s%07d" % (name[:1], len(self.short_names))
+        fname = name + "." + ext
+        self.short_names.add(fname)
+        return fname
+
+
+class FileShim:
+    def __init__(self, fd, path):
+        self.__fd = fd
+        self.init_attr = None
+        self.path = path
+        self.is_dir = False
+        self.delete_pending = 0
+
+    def setInitialAttrs(self, attrs):
+        self.init_attr = attrs
+
+    def _getAttrs_actual(self):
+        return self.__fd.getAttrs()
+
+    def read(self, offset, length):
+        return self.__fd.readChunk(offset, length)
+
+    def write(self, offset, data):
+        return self.__fd.writeChunk(offset, data)
+
+    def flush(self):
+        return self.__fd.flush()
+
+    def close(self):
+        return self.__fd.close()
