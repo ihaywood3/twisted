@@ -188,6 +188,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
         command = cmds.index(command)
     if command is not None:
         packet.hdr.command = command
+
     if status is None:
         status = smbtypes.NTStatus.UNSUCCESSFUL
     if isinstance(status, smbtypes.NTStatus):
@@ -868,6 +869,7 @@ def smb_query_directory(packet, resp_type):
     glob = packet.data[
         packet.body.offset : packet.body.offset + packet.body.length
     ].decode("utf-16le")
+    flags = smbtypes.QueryDirFlags(packet.body.flags)
     log.debug(
         """
 QUERY DIRECTORY
@@ -883,12 +885,23 @@ glob    {glob}
 """,
         sz=packet.body.size,
         file_id=packet.body.file_id,
-        flags=packet.body.flags,
+        flags=flags,
         fd=fd,
         info_class=info_class,
         obl=packet.body.output_buffer_length,
         glob=glob,
+        index=packet.body.index,
     )
+
+    if flags & smbtypes.QueryDirFlags.INDEX_SPECIFIED:
+        raise base.SMBError(
+            "directory byte indexing not supported", smbtypes.NTStatus.NOT_SUPPORTED
+        )
+    restart = bool(
+        (flags & smbtypes.QueryDirFlags.RESTART_SCANS)
+        or (flags & smbtypes.QueryDirFlags.REOPEN)
+    )
+    first_only = bool(flags & smbtypes.QueryDirFlags.RETURN_SINGLE_ENTRY)
 
     def cb_dir(resplist):
         def each_resp(resp):
@@ -907,17 +920,26 @@ glob    {glob}
                 "output buffer too long", smbtypes.NTStatus.BUFFER_OVERFLOW
             )
         packet.data = base.pack(resp_type(length=len(data))) + data
-        sendHeader(packet)
+        if len(resplist) == 0:
+            sendHeader(packet, status=smbtypes.NTStatus.NO_MORE_FILES)
+        else:
+            sendHeader(packet)
 
-    func_name = "dir" + info_class.name
     try:
-        func = getattr(fd, func_name)
+        enum_class = getattr(smbtypes, info_class.name)
     except AttributeError:
         raise base.SMBError(
             "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
         )
-    d = maybeDeferred(func, glob)
-    # NOTE: dirXXX functions return a *list* of attr'ed data objects
+    d = maybeDeferred(
+        fd.listDir,
+        enum_class,
+        glob,
+        restart,
+        first_only,
+        packet.body.output_buffer_length,
+    )
+    # listDir returns a *list* of attr'ed data objects
     d.addCallback(cb_dir)
     d.addErrback(eb_common, packet)
 

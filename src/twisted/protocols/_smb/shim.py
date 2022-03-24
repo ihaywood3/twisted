@@ -9,6 +9,7 @@ from having to implement a lot of standard "boilerplate" functionality
 The shim objects play the role of "filesystem driver" in Windows.
 """
 
+import fnmatch
 import os.path
 import stat
 
@@ -265,6 +266,8 @@ class DirShim(CommonShim):
         self.is_dir = True
         self.delete_pending = 0
         self.short_names = set()
+        self.running = False
+        self.cache = []
 
     def _getAttrs_actual(self):
         return self.__vfs.getAttrs(self.path)
@@ -311,8 +314,86 @@ class DirShim(CommonShim):
         self.short_names.add(fname)
         return fname
 
+    def _make_dir_entry(self, enum_class, longname, a, shortname):
+        file_name_len = len(longname) * 2
+        offset = file_name_len + base.calcsize(enum_class)
+        if offset % 8 > 0:
+            padding = 8 - (offset % 8)
+            longname += "\0" * int(padding / 2)
+            offset += padding
+        e = enum_class(
+            alloc_size=a.get("ext_blksize", smbtypes.CLUSTER_SIZE),
+            end_of_file=a["size"],
+            ctime=base.unixToNTTime(a.get("ext_birthtime", a["mtime"])),
+            mtime=base.unixToNTTime(a.get("ext_ctime", a["mtime"])),
+            wtime=base.unixToNTTime(a["mtime"]),
+            atime=base.unixToNTTime(a["atime"]),
+            attributes=self._a2attrib(a),
+            next_entry_offset=offset,
+            file_name=longname,
+            file_name_len=file_name_len,
+        )
+        if shortname:
+            bshortname = shortname.encode("utf-16le")
+            shortname_len = len(bshortname)
+            bshortname += b"\0" * (24 - shortname_len)
+            e.short_name = bshortname
+            e.short_name_len = shortname_len
+        return e
 
-class FileShim:
+    def _ret_cache(self, enum_class, obl, first_only):
+        if not self.cache:
+            return []
+        if first_only:
+            l, a, s = self.cache[0]
+            self.cache = self.cache[1:]
+            o = self._make_dir_entry(enum_class, l, a, s)
+            o.next_entry_offset = 0
+            return [o]
+        ret_buffer = []
+        for i in range(len(self.cache)):
+            l, a, s = self.cache[i]
+            o = self._make_dir_entry(enum_class, l, a, s)
+            obl -= o.next_entry_offset
+            if obl > 0:
+                ret_buffer.append(o)
+            else:
+                # we have run out of output buffer, o is discarded
+                self.cache = self.cache[i:]
+                ret_buffer[-1].next_entry_offset = 0
+                return ret_buffer
+        # whole cache used
+        self.cache = []
+        ret_buffer[-1].next_entry_offset = 0
+        return ret_buffer
+
+    def listDir(self, enum_class, glob, restart, first_only, obl):
+        def int_listdir(l):
+            if (
+                enum_class is smbtypes.FileBothDirectoryInformation
+                or enum_class is smbtypes.FileIdBothDirectoryInformation
+            ):
+                self.cache = [(n, a, self._make_short_name(n)) for n, a in sorted(l)]
+            else:
+                self.cache = [(n, a, None, True) for n, a in l]
+            return self._ret_cache(enum_class, obl, first_only)
+
+        if restart or not self.running:
+            self.running = True
+            if glob == "*.*":
+                glob = "*"
+            d = self.__vfs.openDirectory(self.path)
+            d.addCallback(int_listdir)
+            return d
+        else:
+            return self._ret_cache(enum_class, obl, first_only)
+
+
+    def close(self):
+        return succeed(None)
+
+
+class FileShim(CommonShim):
     def __init__(self, fd, path):
         self.__fd = fd
         self.init_attr = None
