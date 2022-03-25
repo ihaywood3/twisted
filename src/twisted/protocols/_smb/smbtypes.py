@@ -477,10 +477,11 @@ class SetInfoResp:
 
 
 # QueryDirReq.flags
-QUERY_DIR_RESTART_SCANS = 0x01
-QUERY_DIR_RETURN_SINGLE_ENTRY = 0x02
-QUERY_DIR_INDEX_SPECIFIED = 0x04
-QUERY_DIR_REOPEN = 0x10
+class QueryDirFlags(enum.IntFlag):
+    RESTART_SCANS = 0x01
+    RETURN_SINGLE_ENTRY = 0x02
+    INDEX_SPECIFIED = 0x04
+    REOPEN = 0x10
 
 
 @attr.s
@@ -596,6 +597,7 @@ class NTStatus(enum.Enum):
     INVALID_PARAMETER = 0xC000000E
     NOT_FOUND = 0xC0000225
     INVALID_DEVICE_REQUEST = 0xC0000010
+    NO_MORE_FILES = 0x80000006
 
 
 FLAG_SERVER = 0x01
@@ -893,7 +895,7 @@ class FileDirectoryInformation:
     alloc_size = long()
     attributes = medium()
     file_name_len = medium()
-    file_name = endstring()
+    file_name = endstring(set_len=False)
 
 
 @attr.s
@@ -912,7 +914,7 @@ class FileBothDirectoryInformation:
     short_name_len = byte()
     reserved = byte()
     short_name = octets(24)
-    file_name = endstring()
+    file_name = endstring(set_len=False)
 
 
 @attr.s
@@ -928,7 +930,7 @@ class FileFullDirectoryInformation:
     attributes = medium()
     file_name_len = medium()
     ea_size = medium()  # can be 0
-    file_name = endstring()
+    file_name = endstring(set_len=False)
 
 
 @attr.s
@@ -949,7 +951,7 @@ class FileIdBothDirectoryInformation:
     short_name = octets(24)
     reserved2 = short()
     file_id = long()
-    file_name = endstring()
+    file_name = endstring(set_len=False)
 
 
 @attr.s
@@ -967,7 +969,7 @@ class FileIdExtdDirectoryInformation:
     ea_size = medium()  # can be 0
     reparse_point_tag = medium()
     file_id = octets(16)  # 0 on non-Windows FS
-    file_name = endstring()
+    file_name = endstring(set_len=False)
 
 
 @attr.s
@@ -985,4 +987,15 @@ class FileIdFullDirectoryInformation:
     ea_size = medium()  # can be 0
     reserved = medium()
     file_id = long()
-    file_name = endstring()
+    file_name = endstring(set_len=False)
+
+
+# filesystem information
+
+
+@attr.s
+class FileFsSizeInformation:
+    total_units = long()
+    avail_units = long()
+    sectors_per_unit = medium()
+    bytes_per_sector = medium()

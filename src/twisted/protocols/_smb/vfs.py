@@ -528,9 +528,9 @@ class ThreadVfs:
                 # some systems dont have at all
                 return None
             d = dict(
-                size=v.f_frsize,
-                blocks=v.f_blocks,
-                free=v.f_bavail,
+                size=v.f_frsize,  # blocksize in bytes
+                blocks=v.f_blocks,  # total blocks
+                free=v.f_bavail,  # free blocks for unprivileged users
                 disk_namemax=v.f_namemax,
             )
             try:

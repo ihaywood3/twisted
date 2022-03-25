@@ -146,6 +146,19 @@ class FilesystemShim:
             d2.addErrback(eb_file)
             return d2
 
+    def getFileFsSizeInformation(self):
+        def cb_ffsi(v):
+            return smbtypes.FileFsSizeInformation(
+                total_units=v["blocks"],
+                avail_units=v["free"],
+                sectors_per_unit=1,
+                bytes_per_sector=v["size"],
+            )
+
+        d = self.__vfs.statfs()
+        d.addCallback(cb_ffsi)
+        return d
+
 
 class CommonShim:
     """
@@ -387,7 +400,6 @@ class DirShim(CommonShim):
             return d
         else:
             return self._ret_cache(enum_class, obl, first_only)
-
 
     def close(self):
         return succeed(None)
