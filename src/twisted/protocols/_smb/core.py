@@ -24,6 +24,8 @@ from twisted.protocols._smb.vfs import IFilesystem
 from twisted.internet import protocol
 from twisted.logger import Logger
 from twisted.cred.checkers import ANONYMOUS
+from twisted.cred.credentials import Anonymous
+from twisted.cred.error import UnauthorizedLogin
 from twisted.internet.defer import maybeDeferred, succeed
 
 log = Logger()
@@ -330,13 +332,14 @@ Prev. session ID 0x{pid:016x}""",
         blob_manager.receiveResp(blob)
         if blob_manager.credential:
             log.debug("got credential: %r" % blob_manager.credential)
+            mind = smbtypes.SMBMind(
+                packet.body.prev_session_id,
+                blob_manager.credential.domain,
+                packet.ctx["addr"],
+            )
             d = packet.ctx["portal"].login(
                 blob_manager.credential,
-                smbtypes.SMBMind(
-                    packet.body.prev_session_id,
-                    blob_manager.credential.domain,
-                    packet.ctx["addr"],
-                ),
+                mind,
                 ISMBServer,
             )
 
@@ -347,13 +350,22 @@ Prev. session ID 0x{pid:016x}""",
                 log.debug("successful login")
                 sessionSetupResponse(packet, blob, smbtypes.NTStatus.SUCCESS)
 
-            def eb_login(failure):
+            def eb_login1(failure):
+                failure.trap(UnauthorizedLogin)
+                log.info("login failed, attempting anonymous access")
+                d = packet.ctx["portal"].login(Anonymous(), mind, ISMBServer)
+                d.addCallback(cb_login)
+                d.addErrback(eb_login2)
+                return d
+
+            def eb_login2(failure):
                 log.debug(failure.getTraceback())
                 blob = blob_manager.generateAuthResponseBlob(False)
                 sessionSetupResponse(packet, blob, smbtypes.NTStatus.LOGON_FAILURE)
 
             d.addCallback(cb_login)
-            d.addErrback(eb_login)
+            d.addErrback(eb_login1)
+            d.addErrback(eb_login2)
         else:
             blob = blob_manager.generateChallengeBlob()
             sessionSetupResponse(packet, blob, smbtypes.NTStatus.MORE_PROCESSING)

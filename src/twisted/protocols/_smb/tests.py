@@ -489,13 +489,15 @@ class TestSambaClient(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    r = TestRealm()
+    tvfs = vfs.ThreadVfs("/home/ian/Twisted")
+    r = TestRealm(tvfs)
     p = portal.Portal(r)
     users_checker = checkers.InMemoryUsernamePasswordDatabaseDontUse()
     users_checker.addUser(TESTUSER, TESTPASSWORD)
     p.registerChecker(users_checker, credentials.IUsernameHashedPassword)
+    p.registerChecker(checkers.AllowAnonymousAccess(), credentials.IAnonymous)
     factory = core.SMBFactory(p)
     port = reactor.listenTCP(445, factory, interface="127.0.0.1")
     port2 = reactor.listenTCP(445, factory, interface="192.168.178.200")
-    port3 = reactor.listenTCP(445, factory, interface="::")
+    # port3 = reactor.listenTCP(445, factory, interface="::")
     reactor.run()
