@@ -999,3 +999,22 @@ class FileFsSizeInformation:
     avail_units = long()
     sectors_per_unit = medium()
     bytes_per_sector = medium()
+
+
+# ioctl's
+
+
+@attr.s
+class FsctlValidateNegotiateInfoReq:
+    capabilities = medium()
+    client_uuid = uuid()
+    security_mode = short()
+    dialect_count = short()
+
+
+@attr.s
+class FsctlValidateNegotiateInfoResp:
+    capabilities = medium()
+    server_uuid = uuid()
+    security_mode = short()
+    dialect = short()

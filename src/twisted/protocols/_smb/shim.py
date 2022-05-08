@@ -408,13 +408,13 @@ class DirShim(CommonShim):
 class FileShim(CommonShim):
     def __init__(self, fd, path):
         self.__fd = fd
-        self.init_attr = None
+        self.init_attrs = None
         self.path = path
         self.is_dir = False
         self.delete_pending = 0
 
     def setInitialAttrs(self, attrs):
-        self.init_attr = attrs
+        self.init_attrs = attrs
 
     def _getAttrs_actual(self):
         return self.__fd.getAttrs()

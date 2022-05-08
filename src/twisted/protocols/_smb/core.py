@@ -202,6 +202,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     packet.signature = b"\0" * 16
     data1 = base.pack(packet.hdr) + packet.data
     if "secret_key" in packet.ctx:
+        log.debug("secret key found [{sk}], signing ", sk=packet.ctx["secret_key"])
         packet.hdr.flags |= smbtypes.FLAG_SIGNED
         sig = hmac.new(packet.ctx["secret_key"], data1, "sha256").digest()
         # NOTE SMB3 uses different hash
@@ -209,6 +210,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
         data1 = base.pack(packet.hdr) + packet.data
     else:
         packet.hdr.flags &= ~smbtypes.FLAG_SIGNED
+        log.debug("no secret_key, not signing")
     packet.data = data1
     packet.send()
 
@@ -277,25 +279,30 @@ def negotiateResponse(packet, dialects=None):
     blob_manager = packet.ctx["blob_manager"]
     blob = blob_manager.generateInitialBlob()
     if dialects is None:
-        log.debug("no dialects data, using 0x0202")
-        dialect = 0x0202
+        log.debug("no dialects data, using 0x0210")
+        dialect = 0x0210
     else:
-        dialect = sorted(dialects)[0]
-        if dialect == 0x02FF:
-            dialect = 0x0202
-        if dialect > smbtypes.MAX_DIALECT:
-            raise base.SMBError(
-                "min client dialect %04x higher than our max %04x"
-                % (dialect, smbtypes.MAX_DIALECT)
-            )
-        log.debug("dialect {dlt:04x} chosen", dlt=dialect)
+        dialect = 0x0210  # sorted(dialects)[-1]
+    if dialect == 0x02FF:
+        dialect = 0x0210
+    if dialect > 0x0311:  # smbtypes.MAX_DIALECT:
+        raise base.SMBError(
+            "min client dialect %04x higher than our max %04x"
+            % (dialect, smbtypes.MAX_DIALECT)
+        )
+    log.debug("dialect {dlt:04x} chosen", dlt=dialect)
     resp = smbtypes.NegResp()
     resp.signing = smbtypes.NEGOTIATE_SIGNING_ENABLED
     resp.dialect = dialect
     resp.server_uuid = packet.ctx["sys_data"].server_uuid
-    resp.capabilities = smbtypes.GLOBAL_CAP_DFS
+    resp.capabilities = (
+        smbtypes.GLOBAL_CAP_LARGE_MTU
+        | smbtypes.GLOBAL_CAP_DFS
+        | smbtypes.GLOBAL_CAP_LEASING
+    )
     resp.time = base.unixToNTTime(base.wiggleTime())
     bt = packet.ctx["sys_data"].boot_time
+    packet.ctx["negotiate_info"] = (resp.capabilities, dialect, resp.signing)
     if bt == 0:
         resp.boot_time = 0
     else:
@@ -326,7 +333,7 @@ Prev. session ID 0x{pid:016x}""",
     if packet.ctx.get("first_session_setup", True):
         blob_manager.receiveInitialBlob(blob)
         blob = blob_manager.generateChallengeBlob()
-        sessionSetupResponse(packet, blob, smbtypes.NTStatus.MORE_PROCESSING)
+        sessionSetupResponse(packet, blob, smbtypes.NTStatus.MORE_PROCESSING, False)
         packet.ctx["first_session_setup"] = False
     else:
         blob_manager.receiveResp(blob)
@@ -343,35 +350,40 @@ Prev. session ID 0x{pid:016x}""",
                 ISMBServer,
             )
 
-            def cb_login(t):
+            def cb_login(t, anonymous):
                 _, packet.ctx["avatar"], packet.ctx["logout_thunk"] = t
                 blob = blob_manager.generateAuthResponseBlob(True)
-                packet.ctx["secret_key"] = blob_manager.secret_key
-                log.debug("successful login")
-                sessionSetupResponse(packet, blob, smbtypes.NTStatus.SUCCESS)
+                if anonymous:
+                    log.debug("anonymous login")
+                else:
+                    packet.ctx["secret_key"] = blob_manager.secret_key
+                    log.debug("successful login")
+                sessionSetupResponse(packet, blob, smbtypes.NTStatus.SUCCESS, anonymous)
 
             def eb_login1(failure):
                 failure.trap(UnauthorizedLogin)
                 log.info("login failed, attempting anonymous access")
                 d = packet.ctx["portal"].login(Anonymous(), mind, ISMBServer)
-                d.addCallback(cb_login)
+                d.addCallback(cb_login, True)
                 d.addErrback(eb_login2)
                 return d
 
             def eb_login2(failure):
                 log.debug(failure.getTraceback())
                 blob = blob_manager.generateAuthResponseBlob(False)
-                sessionSetupResponse(packet, blob, smbtypes.NTStatus.LOGON_FAILURE)
+                sessionSetupResponse(
+                    packet, blob, smbtypes.NTStatus.LOGON_FAILURE, False
+                )
 
-            d.addCallback(cb_login)
+            d.addCallback(cb_login, False)
             d.addErrback(eb_login1)
             d.addErrback(eb_login2)
         else:
             blob = blob_manager.generateChallengeBlob()
-            sessionSetupResponse(packet, blob, smbtypes.NTStatus.MORE_PROCESSING)
+            sessionSetupResponse(packet, blob, smbtypes.NTStatus.MORE_PROCESSING, False)
 
 
-def sessionSetupResponse(packet, blob, ntstatus):
+def sessionSetupResponse(packet, blob, ntstatus, anonymous):
     """
     send session setup response
 
@@ -385,8 +397,8 @@ def sessionSetupResponse(packet, blob, ntstatus):
     """
     log.debug("sessionSetupResponse")
     resp = smbtypes.SessionResp()
-    if packet.ctx["blob_manager"].credential == ANONYMOUS:
-        resp.flags |= smbtypes.SESSION_FLAG_IS_NULL
+    if anonymous:
+        resp.flags |= smbtypes.SESSION_FLAG_IS_GUEST
     resp.buflen = len(blob)
     packet.data = base.pack(resp) + blob
     sendHeader(packet, "session_setup", ntstatus)
@@ -1034,6 +1046,27 @@ max output {max_output_response}
         d = fd.pipeTranscieve(input_data)
         d.addCallback(cb_ioctl)
         d.addErrback(eb_common, packet)
+    elif ctl_code == smbtypes.Ioctl.FSCTL_VALIDATE_NEGOTIATE_INFO:
+        obj, data = base.unpack(
+            smbtypes.FsctlValidateNegotiateInfoReq, input_data, remainder=base.DATA
+        )
+        log.info(
+            """
+FSCTL_VALIDATE_NEGOTIATE_INFO
+-----------------------------
+
+%r
+%r"""
+            % (obj, data)
+        )
+        cap, dialect, sm = packet.ctx["negotiate_info"]
+        f = smbtypes.FsctlValidateNegotiateInfoResp(
+            server_uuid=packet.ctx["sys_data"].server_uuid,
+            capabilities=cap,
+            security_mode=sm,
+            dialect=dialect,
+        )
+        cb_ioctl(base.pack(f))
     else:
         raise base.SMBError(
             "fsctl %r not supported" % ctl_code,

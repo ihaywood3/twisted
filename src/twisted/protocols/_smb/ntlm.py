@@ -440,7 +440,9 @@ class NTLMCredential(object):
         # The NTLMv2 password hash. In [MS-NLMP], this is the result of NTOWFv2
         # and LMOWFv2 functions
         response_key = hmac.new(
-            ntlm_hash, (self.username.upper() + self.domain).encode("UTF-16LE"), "md5"
+            ntlm_hash,
+            (self.username.upper() + (self.domain or "")).encode("UTF-16LE"),
+            "md5",
         ).digest()
         if self.lm and self.lm["response"] != b"\0" * 16:
             new_resp = hmac.new(
