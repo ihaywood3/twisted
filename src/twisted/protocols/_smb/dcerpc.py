@@ -90,11 +90,17 @@ def _register(f, pipe, opcode):
 
 
 WCHAR = "W"
+ASCII = "A"
 
 
 def wchar(default=""):
     """a Windows "wide char" (UTF-16) string"""
     return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: WCHAR})
+
+
+def ascii(default=""):
+    """a plain 7-bit ASCII string"""
+    return attr.ib(default=default, type=str, metadata={base.SMB_METADATA: ASCII})
 
 
 def referent():
@@ -162,7 +168,7 @@ def _unpackWchar(data, offset):
 
 def pack(obj, caller_bio=None):
     """
-    L{base.pack} is extended to support L{wchar}
+    L{base.pack} is extended to support L{wchar} and L{ascii}
 
     @param caller_bio: a I/O buffer to write the result to
     @type caller_bio: L{io.BytesIO}
@@ -190,6 +196,9 @@ def pack(obj, caller_bio=None):
                 bio.write(b"\0\0")
             else:
                 bio.write(b"\0\0\0\0")  # maintain 4-byte alignment
+        elif t == ASCII:
+            v = getattr(obj, n, "")
+            bio.write(v.encode("ascii"))
         else:
             fmt = "<" + t
             v = getattr(obj, n)
@@ -294,6 +303,7 @@ class BindAckResult(enum.Enum):
     ACCEPTANCE = 0
     USER_REJECTION = 1
     PROVIDER_REJECTION = 2
+    NEGOTIATE_ACK = 3  # Windows extension
 
 
 # reason codes
@@ -309,8 +319,8 @@ class BindAck:
     max_xmit_frag = short()
     max_recv_frag = short()
     assoc_group_id = medium()
-    sec_addr = short()
-    # we dont support actually sending secondary address
+    sec_addr_len = short()
+    sec_addr = ascii()
     pad = octets(2)
     n_results = byte()
     pad2 = octets(3)
@@ -565,18 +575,36 @@ class DceRpcProcessor:
         offset = 0
         self.contexts = {}
         replies = []
+        ctxs = {}
         for i in range(sec_header.n_contexts):
             pc, offset = base.unpack(PresentationContext, payload, offset, base.OFFSET)
             log.debug(
-                "DCE/RPC bind presentation context abstract_uuid={u!r}.{v!r}",
+                "DCE/RPC bind presentation context abstract_uuid={u!r}.{v!r} p_cont_id={p}",
                 u=pc.abstract_uuid,
+                p=pc.p_cont_id,
                 v=pc.abstract_version,
             )
-            found_ts = False
-            ts_version = 0
             for j in range(pc.n_transfer_syntaxes):
                 ts, offset = base.unpack(TransferSyntax, payload, offset, base.OFFSET)
+                log.debug(
+                    "transfer syntax {ts_uuid}.{ts_vers}",
+                    ts_uuid=ts.uuid,
+                    ts_vers=ts.vers,
+                )
+                idx = (pc.abstract_uuid, pc.abstract_version)
+                if idx not in ctxs:
+                    ctxs[idx] = {"pc": pc, "txs": [], "order": i}
+                ctxs[idx]["txs"].append(ts)
+
+        ctxs_list = sorted(ctxs.values(), key=lambda x: x["order"])
+        for k in ctxs_list:
+            pc = k["pc"]
+            ts_version = 0
+
+            found_ts = False
+            for ts in k["txs"]:
                 if ts.uuid == TRANSFER_SYNTAX:
+                    log.debug("32-bit syntax found")
                     found_ts = True
                     ts_version = ts.vers
             if found_ts:
@@ -595,19 +623,34 @@ class DceRpcProcessor:
                         reason=BindAckReason.PROPOSED_TRANSFER_SYNTAXES_NOT_SUPPORTED.value,
                     )
                 )
+
+        # *** Windows extension ***
+        replies.append(
+            ResultItem(
+                result=BindAckResult.NEGOTIATE_ACK.value,
+                reason=3,  # repurposed as some sort of features bitmask, poorly documented
+            )
+        )
+
+        log.debug("DCERPC bind replies {r}", r=repr(replies))
         if sec_header.assoc_group_id > 0:
             self.assoc_group_id = sec_header.assoc_group_id
         else:
             self.assoc_group_id = random.randint(1, MAX_ASSOC_GROUP_ID)
+        # secondary address not specified by spec: this is what Windows does in practice
+        sec_addr = "\\PIPE\\" + self.pipe
         self.rpc_vers_minor = header.rpc_vers_minor
         ack = BindAck(
             n_results=len(replies),
             max_xmit_frag=sec_header.max_xmit_frag,
             max_recv_frag=sec_header.max_recv_frag,
             assoc_group_id=self.assoc_group_id,
+            sec_addr=sec_addr,
+            sec_addr_len=len(sec_addr),
         )
+
         r = b"".join(base.pack(i) for i in replies)
-        self.send("bind_ack", base.pack(ack), r, callid=header.callid)
+        self.send("bind_ack", pack(ack), r, callid=header.callid)
 
     def dcerpc_request(self, header, sec_header, payload):
         p_cont_id = sec_header.p_cont_id
@@ -912,7 +955,7 @@ def NetShareGetInfo(sys_data, avatar, payload):
 
         def cb_ShareGetInfo(shares):
             shares.append(("IPC$", SHARE_IPC | SHARE_SPECIAL_MASK, "Internal IPC"))
-            shares = [(n, SHARES_T[id(t)], r) for n, t, r in shares if n == i.name]
+            shares = [(n, SHARES_T[id(t)], r) for n, t, r in shares if n == i.share]
             n, t, r = shares[0]
             resp = NetShareInfo1(name=n, share_type=t, remark=r)
             return pack(resp)

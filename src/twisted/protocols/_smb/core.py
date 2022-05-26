@@ -777,7 +777,7 @@ size    {sz}
 file id {file_id}
 offset  {offset}
 length  {length}
-flags   {flags :04x}
+flags   {flags:04x}
 file    {fd!r}
 data    {data!r}
 """,
