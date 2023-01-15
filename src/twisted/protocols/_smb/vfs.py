@@ -425,6 +425,7 @@ class ThreadVfs:
             "mtime": int(s.st_mtime),
             "ext_ctime": int(s.st_ctime),
             "ext_nlinks": s.st_nlink,
+            "inode": s.st_ino,
         }
         try:
             d["ext_blksize"] = s.st_blksize
@@ -535,6 +536,7 @@ class ThreadVfs:
             )
             try:
                 d["disk_id"] = v.f_fsid % 2 ** 32
+                d["disk_id64"] = v.f_fsid
             except AttributeError:
                 pass  # only python 3.7+
             try:

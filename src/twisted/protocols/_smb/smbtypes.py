@@ -186,6 +186,76 @@ FILE_OPEN_REPARSE_POINT = 0x00200000
 FILE_OPEN_NO_RECALL = 0x00400000
 FILE_OPEN_FOR_FREE_SPACE_QUERY = 0x00800000
 
+# structures for create context
+
+
+@attr.s
+class CreateContext:
+    """elements within CreateReq.ctx"""
+
+    next = medium()
+    name_offset = short()
+    name_length = short()
+    reserved = short()
+    data_offset = short()
+    data_length = medium()
+
+
+@attr.s
+class CreateCtxQueryMaximalAccessReq:
+    timestamp = long()
+
+
+@attr.s
+class CreateCtxQueryMaximalAccessResp:
+    ntstatus = medium()
+    maximal_access = medium()
+
+
+@attr.s
+class CreateCtxQueryOnDiskId:
+    disk_file_id = long()
+    volume_id = long()
+    reserved = octets(16)
+
+
+@attr.s
+class CreateCtxDurableHandle:
+    reserved = octets(8)
+
+
+# CreateCtxResponseLease.state
+
+
+class CreateCtxLeaseState(enum.Enum):
+    Lease_None = 0
+    Read_Caching = 1
+    Handle_Caching = 2
+    Write_Caching = 4
+
+
+LEASE_FLAG_BREAK_IN_PROGRESS = 2
+
+
+@attr.s
+class CreateCtxResponseLease:  # same structure for request
+    key = octets(16)
+    state = medium()
+    flags = medium()
+    duration = long()
+
+
+# values for CreateContext.name
+
+CREATE_EA_BUFFER = b"ExtA"
+CREATE_SD_BUFFER = b"SecD"
+CREATE_DURABLE_HANDLE = b"DHnQ"
+CREATE_DURABLE_HANDLE_V2 = b"DH2Q"
+CREATE_DURABLE_HANDLE_RECONNECT = b"DH2C"
+CREATE_QUERY_MAXIMAL_ACCESS = b"MxAc"
+CREATE_QUERY_ON_DISK_ID = b"QFid"
+CREATE_RESPONSE_LEASE = b"RqLs"
+
 
 @attr.s
 class CreateReq:
@@ -598,6 +668,7 @@ class NTStatus(enum.Enum):
     NOT_FOUND = 0xC0000225
     INVALID_DEVICE_REQUEST = 0xC0000010
     NO_MORE_FILES = 0x80000006
+    NOT_A_REPARSE_POINT = 0xC0000275
 
 
 FLAG_SERVER = 0x01
@@ -626,7 +697,7 @@ GLOBAL_CAP_PERSISTENT_HANDLES = 0x00000010
 GLOBAL_CAP_DIRECTORY_LEASING = 0x00000020
 GLOBAL_CAP_ENCRYPTION = 0x00000040
 
-MAX_DIALECT = 0x02FF
+MAX_DIALECT = 0x0202
 
 CLUSTER_SIZE = 4096
 

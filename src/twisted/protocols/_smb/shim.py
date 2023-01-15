@@ -26,7 +26,7 @@ class IPCShim:
 
     def open(self, path, **_kwargs):
         driver = PipeShim(self.__ipc.open(path))
-        return (driver, smbtypes.CreateAction.Opened)
+        return (driver, smbtypes.CreateAction.Opened, {})
 
 
 class PipeShim:
@@ -106,11 +106,85 @@ class FilesystemShim:
             flags |= os.O_CREAT | os.O_TRUNC
             def_action = smbtypes.CreateAction.Overwritten
 
+        if kwargs["options"] & smbtypes.FILE_OPEN_REPARSE_POINT:
+            log.warn("client attempting to open '{path}' as reparse point", path=path)
+            # raise base.SMBError(
+            #    "not a reparse point", smbtypes.NTStatus.NOT_A_REPARSE_POINT
+            # )
+
+        def add_ctx(driver, action, attrs):
+            ctx = {}
+
+            def cb_diskid(statfs):
+                ctx[smbtypes.CREATE_QUERY_ON_DISK_ID] = smbtypes.CreateCtxQueryOnDiskId(
+                    disk_file_id=attrs["inode"], volume_id=statfs["disk_id64"]
+                )
+
+            d = None
+            if "ctx" in kwargs:
+                if smbtypes.CREATE_QUERY_ON_DISK_ID in kwargs["ctx"]:
+                    d = self.__vfs.statfs()
+                    d.addCallback(cb_diskid)
+
+                if smbtypes.CREATE_QUERY_MAXIMAL_ACCESS in kwargs["ctx"]:
+                    if self.__vfs.read_only:
+                        ma = (
+                            smbtypes.FILE_READ_DATA
+                            | smbtypes.FILE_READ_ATTRIBUTES
+                            | smbtypes.FILE_EXECUTE
+                        )
+                    else:
+                        ma = (
+                            smbtypes.FILE_READ_DATA
+                            | smbtypes.FILE_READ_ATTRIBUTES
+                            | smbtypes.FILE_EXECUTE
+                            | smbtypes.FILE_WRITE_DATA
+                            | smbtypes.FILE_WRITE_ATTRIBUTES
+                            | smbtypes.FILE_APPEND_DATA
+                            | smbtypes.DELETE
+                            | smbtypes.FILE_DELETE_CHILD
+                            | smbtypes.WRITE_OWNER
+                            | smbtypes.READ_CONTROL
+                            | smbtypes.WRITE_DAC
+                            | smbtypes.SYNCHRONIZE
+                            | smbtypes.FILE_WRITE_EA
+                            | smbtypes.FILE_READ_EA
+                        )
+                    ctx[
+                        smbtypes.CREATE_QUERY_MAXIMAL_ACCESS
+                    ] = smbtypes.CreateCtxQueryMaximalAccessResp(
+                        maximal_access=ma, ntstatus=smbtypes.NTStatus.SUCCESS
+                    )
+                if smbtypes.CREATE_DURABLE_HANDLE in kwargs["ctx"]:
+                    ctx[
+                        smbtypes.CREATE_DURABLE_HANDLE
+                    ] = smbtypes.CreateCtxDurableHandle()
+                if smbtypes.CREATE_RESPONSE_LEASE in kwargs["ctx"]:
+                    req_lease = kwargs["ctx"][smbtypes.CREATE_RESPONSE_LEASE]
+                    ctx[
+                        smbtypes.CREATE_RESPONSE_LEASE
+                    ] = smbtypes.CreateCtxResponseLease(
+                        key=req_lease.key, state=req_lease.state
+                    )
+            if d:
+                d.addCallback(lambda _: (driver, action, ctx))
+                return d
+            else:
+                return (driver, action, ctx)
+
         def cb_addshim(fd, action, attrs):
             driver = FileShim(fd, path)
             if attrs:
                 driver.setInitialAttrs(attrs)
-            return (driver, action)
+                return add_ctx(driver, action, attrs)
+            else:
+                d = self.__vfs.getAttrs(path)
+                d.addCallback(cb_addshim2, driver, action)
+                return d
+
+        def cb_addshim2(attrs, driver, action):
+            driver.setInitialAttrs(attrs)
+            return add_ctx(driver, action, attrs)
 
         def eb_addshim(failure):
             failure.trap(FileNotFoundError)
@@ -118,8 +192,10 @@ class FilesystemShim:
 
         def cb_file(attrs, action):
             if attrs and stat.S_ISDIR(attrs["permissions"]) > 0:
-                return succeed(
-                    (DirShim(self.__vfs, attrs, path), smbtypes.CreateAction.Opened)
+                return add_ctx(
+                    DirShim(self.__vfs, attrs, path),
+                    smbtypes.CreateAction.Opened,
+                    attrs,
                 )
             else:
                 d = self.__vfs.openFile(path, flags)
@@ -284,6 +360,22 @@ class DirShim(CommonShim):
 
     def _getAttrs_actual(self):
         return self.__vfs.getAttrs(self.path)
+
+    def getFileNetworkOpenInformation(self):
+        def cb_fnoi(a):
+            return smbtypes.FileNetworkOpenInformation(
+                alloc_size=0,
+                end_of_file=0,  # unlike POSIX, Windows directories have no length
+                ctime=base.unixToNTTime(a.get("ext_birthtime", a["mtime"])),
+                mtime=base.unixToNTTime(a.get("ext_ctime", a["mtime"])),
+                wtime=base.unixToNTTime(a["mtime"]),
+                atime=base.unixToNTTime(a["atime"]),
+                attributes=self._a2attrib(a),
+            )
+
+        d = self._getAttrs()
+        d.addCallback(cb_fnoi)
+        return d
 
     def _make_short_name(self, long_name):
         s1 = long_name.upper().replace(" ", "")

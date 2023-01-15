@@ -7,6 +7,7 @@ U{https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/
 5606ad47-5ee0-437a-817e-70c366052962}
 """
 
+from itertools import chain
 import struct
 import binascii
 from uuid import uuid4
@@ -279,17 +280,18 @@ def negotiateResponse(packet, dialects=None):
     blob_manager = packet.ctx["blob_manager"]
     blob = blob_manager.generateInitialBlob()
     if dialects is None:
-        log.debug("no dialects data, using 0x0210")
-        dialect = 0x0210
+        log.debug("no dialects data, using {dlt:04x}", dlt=smbtypes.MAX_DIALECT)
+        dialect = smbtypes.MAX_DIALECT
     else:
-        dialect = 0x0210  # sorted(dialects)[-1]
+        dialects = [x for x in dialects if x <= smbtypes.MAX_DIALECT]
+        if len(dialects) == 0:
+            raise base.SMBError(
+                "no client dialect equal or less than our max %04x"
+                % smbtypes.MAX_DIALECT
+            )
+        dialect = sorted(dialects)[-1]
     if dialect == 0x02FF:
         dialect = 0x0210
-    if dialect > 0x0311:  # smbtypes.MAX_DIALECT:
-        raise base.SMBError(
-            "min client dialect %04x higher than our max %04x"
-            % (dialect, smbtypes.MAX_DIALECT)
-        )
     log.debug("dialect {dlt:04x} chosen", dlt=dialect)
     resp = smbtypes.NegResp()
     resp.signing = smbtypes.NEGOTIATE_SIGNING_ENABLED
@@ -474,18 +476,19 @@ Path   {path!r}
                 capabilities=0,
                 max_perms=(
                     smbtypes.FILE_READ_DATA
-                    | smbtypes.FILE_WRITE_DATA
-                    | smbtypes.FILE_APPEND_DATA
-                    # | FILE_WRITE_EA | FILE_READ_EA
-                    | smbtypes.FILE_DELETE_CHILD
-                    | smbtypes.FILE_EXECUTE
                     | smbtypes.FILE_READ_ATTRIBUTES
+                    | smbtypes.FILE_EXECUTE
+                    | smbtypes.FILE_WRITE_DATA
                     | smbtypes.FILE_WRITE_ATTRIBUTES
+                    | smbtypes.FILE_APPEND_DATA
                     | smbtypes.DELETE
+                    | smbtypes.FILE_DELETE_CHILD
+                    | smbtypes.WRITE_OWNER
                     | smbtypes.READ_CONTROL
                     | smbtypes.WRITE_DAC
-                    | smbtypes.WRITE_OWNER
                     | smbtypes.SYNCHRONIZE
+                    | smbtypes.FILE_WRITE_EA
+                    | smbtypes.FILE_READ_EA
                 ),
             )
             share = shim.FilesystemShim(share)
@@ -572,6 +575,54 @@ def smb_create(packet, resp_type):
     ctx = packet.data[
         packet.body.ctx_offset : packet.body.ctx_offset + packet.body.ctx_length
     ]
+    ctx_ptr = 0
+    ctx_as_dict = {}
+    if ctx:
+        while True:
+            c = base.unpack(smbtypes.CreateContext, ctx, ctx_ptr)
+            name = ctx[
+                c.name_offset + ctx_ptr : c.name_offset + c.name_length + ctx_ptr
+            ]
+            if c.data_length:
+                data = ctx[
+                    c.data_offset + ctx_ptr : c.data_length + c.data_offset + ctx_ptr
+                ]
+            else:
+                data = None
+            if name == smbtypes.CREATE_QUERY_MAXIMAL_ACCESS:
+                if data:
+                    d = base.unpack(smbtypes.CreateCtxQueryMaximalAccessReq, data)
+                    ctx_as_dict[name] = d.timestamp
+                else:
+                    ctx_as_dict[name] = True
+            elif name == smbtypes.CREATE_QUERY_ON_DISK_ID:
+                ctx_as_dict[name] = True
+            elif name in (smbtypes.CREATE_EA_BUFFER, smbtypes.CREATE_SD_BUFFER):
+                # we don't support these, but no return is reqired, so can ignore
+                log.warn(
+                    "ignoring Create Context {name} -> {data}",
+                    name=name,
+                    data=repr(data),
+                )
+            elif name == smbtypes.CREATE_DURABLE_HANDLE:
+                ctx_as_dict[name] = True  # data doesn't contain anything
+            elif name == smbtypes.CREATE_RESPONSE_LEASE:
+                ctx_as_dict[smbtypes.CREATE_RESPONSE_LEASE] = base.unpack(
+                    smbtypes.CreateCtxResponseLease, data
+                )
+            else:
+                log.error(
+                    "unhandled Create Context {name} -> {data}",
+                    name=name,
+                    data=repr(data),
+                )
+                raise base.SMBError(
+                    "unhandled Create Context", smbtypes.NTStatus.NOT_IMPLEMENTED
+                )
+            if c.next == 0:
+                break
+            else:
+                ctx_ptr += c.next
     path = path.decode("utf-16le")
     oplock_level = smbtypes.OplockLevels(packet.body.oplock_level)
     impersonation_level = smbtypes.ImpersonationLevel(packet.body.impersonation_level)
@@ -600,10 +651,34 @@ Context        {ctx!r}
         sa=packet.body.share_access,
         dis=disposition,
         opt=packet.body.options,
-        ctx=ctx,
+        ctx=ctx_as_dict,
     )
 
-    def cb_create2(s, file_id, action):
+    def cb_create2(s, file_id, action, ctx_as_dict):
+        ctx_as_list = []
+        for name, data_obj in ctx_as_dict.items():
+            data = base.pack(data_obj)
+            orig_name_len = len(name)
+            # name must be padded to 8 bytes
+            pad = 8 - (orig_name_len % 8)
+            if pad < 8:
+                name += b"\0" * pad
+            log.info("padded name: {n!r} pad: {pad}", n=name, pad=pad)
+            c = smbtypes.CreateContext(
+                name_length=orig_name_len,
+                data_length=len(data),
+                name_offset=base.calcsize(smbtypes.CreateContext),
+                data_offset=base.calcsize(smbtypes.CreateContext) + len(name),
+                next=base.calcsize(smbtypes.CreateContext) + len(name) + len(data),
+            )
+            ctx_as_list.append((c, name, data))
+        if ctx_as_list:
+            ctx_as_list[-1][0].next = 0
+            list2 = [[base.pack(c), n, d] for c, n, d in ctx_as_list]
+            flat_list = list(chain(*list2))
+            ctx = b"".join(flat_list)
+        else:
+            ctx = b""
         resp = resp_type(
             file_size=s.end_of_file,
             alloc_size=s.alloc_size,
@@ -615,18 +690,25 @@ Context        {ctx!r}
             atime=s.atime,
             wtime=s.wtime,
             mtime=s.mtime,
+            ctx_length=len(ctx),
             ctx_offset=0,
         )
-        packet.data = base.pack(resp)
+        if ctx:
+            resp.ctx_offset = base.calcsize(resp_type) + base.calcsize(
+                smbtypes.HeaderSync
+            )
+            packet.data = base.pack(resp) + ctx
+        else:
+            packet.data = base.pack(resp)
         sendHeader(packet)
 
     def cb_create1(a):
-        driver, action = a
+        driver, action, reply_ctx = a
         file_id = uuid4()
         packet.ctx["files"][file_id] = driver
         # for pipes not a Deferred, but otherwise would be
         noi = maybeDeferred(driver.getFileNetworkOpenInformation)
-        noi.addCallback(cb_create2, file_id, action)
+        noi.addCallback(cb_create2, file_id, action, reply_ctx)
         noi.addErrback(eb_common, packet)
 
     d1 = maybeDeferred(
@@ -639,7 +721,7 @@ Context        {ctx!r}
         share_access=packet.body.share_access,
         disposition=disposition,
         options=packet.body.options,
-        ctx=ctx,
+        ctx=ctx_as_dict,
     )
     d1.addCallback(cb_create1)
     d1.addErrback(eb_common, packet)
