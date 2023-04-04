@@ -30,6 +30,7 @@ from twisted.cred.error import UnauthorizedLogin
 from twisted.internet.defer import maybeDeferred, succeed
 
 log = Logger()
+outgoing_packets = []
 
 COMMANDS = [
     ("negotiate", smbtypes.NegReq, smbtypes.NegResp),
@@ -64,8 +65,8 @@ def packetReceived(packet):
     @type packet: L{base.SMBPacket}
     """
     offset = 0
-    isRelated = True
-    while isRelated:
+    hasNext = True
+    while hasNext:
         protocol_id = packet.data[offset : offset + len(smbtypes.SMB2_MAGIC)]
         if protocol_id == smbtypes.SMB1_MAGIC:
             # its a SMB1 packet which we dont support with the exception
@@ -91,7 +92,9 @@ def packetReceived(packet):
         # FIXME other flags 3.1 or too obscure
         if isAsync:
             packet.hdr = base.unpack(smbtypes.HeaderAsync, packet.data, offset)
-        if isRelated:
+        if packet.hdr.next_command == 0:
+            hasNext = False
+        if hasNext:
             this_packet = packet.data[offset : offset + packet.hdr.next_command]
         else:
             this_packet = packet.data[offset:]
@@ -142,7 +145,7 @@ signature       {sig}""",
                 if func in globals() and req_type:
                     req = base.unpack(req_type, packet.data, o2)
                     new_packet = packet.clone(
-                        data=this_packet, hdr=packet.hdr, body=req
+                        data=this_packet, hdr=packet.hdr, body=req, final=not hasNext
                     )
                     globals()[func](new_packet, resp_type)
                 else:
@@ -181,11 +184,14 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     @param status: packet status, an NTSTATUS code
     @type status: L{int} or L{smbtypes.NTStatus}
     """
-    # FIXME credit not supported yet
+    global outgoing_packets
     if packet.hdr is None:
         packet.hdr = smbtypes.HeaderSync()
     packet.hdr.flags |= smbtypes.FLAG_SERVER
-    packet.hdr.flags &= ~smbtypes.FLAG_RELATED
+    if packet.final:
+        packet.hdr.next_command = 0
+    else:
+        packet.hdr.next_command = smbtypes.HEADER_SIZE + len(packet.data)
     if isinstance(command, str):
         cmds = [c[0] for c in COMMANDS]
         command = cmds.index(command)
@@ -199,8 +205,11 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     packet.hdr.status = status
     if packet.hdr.credit_request > 0:
         packet.hdr.credit_charge = 1
-    packet.hdr.credit_request = 1
-    packet.signature = b"\0" * 16
+        # leave credit_request as-is ie give the client what it wants
+    else:
+        packet.hdr.credit_request = 1
+    packet.hdr.signature = b"\0" * 16
+    packet.hdr.size = smbtypes.HEADER_SIZE
     data1 = base.pack(packet.hdr) + packet.data
     if "secret_key" in packet.ctx:
         log.debug("secret key found [{sk}], signing ", sk=packet.ctx["secret_key"])
@@ -212,8 +221,11 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     else:
         packet.hdr.flags &= ~smbtypes.FLAG_SIGNED
         log.debug("no secret_key, not signing")
-    packet.data = data1
-    packet.send()
+    outgoing_packets.append(data1)
+    if packet.final:
+        packet.data = b"".join(outgoing_packets)
+        packet.send()
+        outgoing_packets = []
 
 
 def smb_negotiate(packet, resp_type):
@@ -297,11 +309,8 @@ def negotiateResponse(packet, dialects=None):
     resp.signing = smbtypes.NEGOTIATE_SIGNING_ENABLED
     resp.dialect = dialect
     resp.server_uuid = packet.ctx["sys_data"].server_uuid
-    resp.capabilities = (
-        smbtypes.GLOBAL_CAP_LARGE_MTU
-        | smbtypes.GLOBAL_CAP_DFS
-        | smbtypes.GLOBAL_CAP_LEASING
-    )
+    resp.capabilities = smbtypes.GLOBAL_CAP_DFS
+    # actually we reject all DFS requests
     resp.time = base.unixToNTTime(base.wiggleTime())
     bt = packet.ctx["sys_data"].boot_time
     packet.ctx["negotiate_info"] = (resp.capabilities, dialect, resp.signing)
@@ -682,7 +691,7 @@ Context        {ctx!r}
         resp = resp_type(
             file_size=s.end_of_file,
             alloc_size=s.alloc_size,
-            oplock_level=smbtypes.OplockLevels.NoLock,
+            oplock_level=oplock_level,
             action=action,
             file_id=file_id,
             attributes=s.attributes,
@@ -1154,6 +1163,32 @@ FSCTL_VALIDATE_NEGOTIATE_INFO
             "fsctl %r not supported" % ctl_code,
             smbtypes.NTStatus.INVALID_DEVICE_REQUEST,
         )
+
+
+def smb_change_notify(packet, resp_type):
+    fd = packet.ctx["files"][packet.body.file_id]
+    log.debug(
+        """
+CHANGE NOTIFY 
+-----
+size    {sz}
+file id {file_id}
+file    {fd!r}
+flags   {flags:04x}
+obl     {obl}
+filter  {fil:08x}
+""",
+        sz=packet.body.size,
+        file_id=packet.body.file_id,
+        fd=fd,
+        flags=packet.body.flags,
+        obl=packet.body.output_buffer_length,
+        fil=packet.body.completion_filter,
+    )
+    # this is a fake implementation that never sends notifications
+    # packet.data = base.pack(resp_type())
+    # sendHeader(packet)
+    raise base.SMBError("pending", smbtypes.NTStatus.PENDING)
 
 
 class SMBFactory(protocol.Factory):

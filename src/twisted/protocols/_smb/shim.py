@@ -188,7 +188,9 @@ class FilesystemShim:
 
         def eb_addshim(failure):
             failure.trap(FileNotFoundError)
-            raise base.SMBError("file not found", smbtypes.NTStatus.NO_SUCH_FILE)
+            raise base.SMBError(
+                "file not found", smbtypes.NTStatus.OBJECT_NAME_NOT_FOUND
+            )
 
         def cb_file(attrs, action):
             if attrs and stat.S_ISDIR(attrs["permissions"]) > 0:
@@ -205,14 +207,16 @@ class FilesystemShim:
 
         def eb_file(failure):
             log.failure("eb_file", failure)
+            failure.trap(FileNotFoundError)
             if flags & os.O_CREAT:
-                failure.trap(FileNotFoundError)
                 d = self.__vfs.openFile(path, flags)
                 d.addCallback(cb_addshim, smbtypes.CreateAction.Created, None)
                 d.addErrback(eb_addshim)
                 return d
             else:
-                failure.raiseException()
+                raise base.SMBError(
+                    "file not found", smbtypes.NTStatus.OBJECT_NAME_NOT_FOUND
+                )
 
         if def_action == smbtypes.CreateAction.Created:
             return cb_file(None, def_action)

@@ -372,6 +372,7 @@ class SMBPacket:
     _proto = attr.ib()
     hdr = attr.ib(default=None)
     body = attr.ib(default=None)
+    final = attr.ib(default=True, type=bool)
 
     @property
     def ctx(self):
@@ -392,7 +393,7 @@ class SMBPacket:
         """
         close the underlying connection
         """
-        self._proto.transport.close()
+        self._proto.transport.loseConnection()
 
     def clone(self, **kwargs):
         """
