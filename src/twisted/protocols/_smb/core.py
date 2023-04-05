@@ -27,7 +27,7 @@ from twisted.logger import Logger
 from twisted.cred.checkers import ANONYMOUS
 from twisted.cred.credentials import Anonymous
 from twisted.cred.error import UnauthorizedLogin
-from twisted.internet.defer import maybeDeferred, succeed
+from twisted.internet.defer import maybeDeferred, succeed, Deferred
 
 log = Logger()
 outgoing_packets = []
@@ -66,6 +66,9 @@ def packetReceived(packet):
     """
     offset = 0
     hasNext = True
+    last_opened_file = (
+        Deferred()
+    )  # for chained packets where one packet refers to a file opened by another
     while hasNext:
         protocol_id = packet.data[offset : offset + len(smbtypes.SMB2_MAGIC)]
         if protocol_id == smbtypes.SMB1_MAGIC:
@@ -145,7 +148,11 @@ signature       {sig}""",
                 if func in globals() and req_type:
                     req = base.unpack(req_type, packet.data, o2)
                     new_packet = packet.clone(
-                        data=this_packet, hdr=packet.hdr, body=req, final=not hasNext
+                        data=this_packet,
+                        hdr=packet.hdr,
+                        body=req,
+                        final=not hasNext,
+                        last_opened_file=last_opened_file,
                     )
                     globals()[func](new_packet, resp_type)
                 else:
@@ -226,6 +233,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
         packet.data = b"".join(outgoing_packets)
         packet.send()
         outgoing_packets = []
+        packet.last_opened_file = None
 
 
 def smb_negotiate(packet, resp_type):
@@ -710,6 +718,7 @@ Context        {ctx!r}
         else:
             packet.data = base.pack(resp)
         sendHeader(packet)
+        packet.last_opened_file.callback(packet.ctx["files"][file_id])
 
     def cb_create1(a):
         driver, action, reply_ctx = a
@@ -976,7 +985,10 @@ output  {obl}
 
 
 def smb_query_directory(packet, resp_type):
-    fd = packet.ctx["files"][packet.body.file_id]
+    if packet.body.file_id == base.UUID_MAX:
+        fd = None
+    else:
+        fd = packet.ctx["files"][packet.body.file_id]
     try:
         info_class = smbtypes.InfoClassFiles(packet.body.info_class)
     except ValueError:
@@ -1018,6 +1030,13 @@ glob    {glob}
     )
     first_only = bool(flags & smbtypes.QueryDirFlags.RETURN_SINGLE_ENTRY)
 
+    try:
+        enum_class = getattr(smbtypes, info_class.name)
+    except AttributeError:
+        raise base.SMBError(
+            "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
+        )
+
     def cb_dir(resplist):
         def each_resp(resp):
             if hasattr(resp, "extra"):
@@ -1040,23 +1059,24 @@ glob    {glob}
         else:
             sendHeader(packet)
 
-    try:
-        enum_class = getattr(smbtypes, info_class.name)
-    except AttributeError:
-        raise base.SMBError(
-            "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
+    def fd_avail(fd2):
+        d = maybeDeferred(
+            fd2.listDir,
+            enum_class,
+            glob,
+            restart,
+            first_only,
+            packet.body.output_buffer_length,
         )
-    d = maybeDeferred(
-        fd.listDir,
-        enum_class,
-        glob,
-        restart,
-        first_only,
-        packet.body.output_buffer_length,
-    )
-    # listDir returns a *list* of attr'ed data objects
-    d.addCallback(cb_dir)
-    d.addErrback(eb_common, packet)
+        # listDir returns a *list* of attr'ed data objects
+        d.addCallback(cb_dir)
+        d.addErrback(eb_common, packet)
+        return fd2
+
+    if packet.body.file_id == base.UUID_MAX:
+        packet.last_opened_file.addCallback(fd_avail)
+    else:
+        fd_avail(fd)
 
 
 def smb_ioctl(packet, resp_type):

@@ -373,6 +373,7 @@ class SMBPacket:
     hdr = attr.ib(default=None)
     body = attr.ib(default=None)
     final = attr.ib(default=True, type=bool)
+    last_opened_file = attr.ib(default=None)
 
     @property
     def ctx(self):
