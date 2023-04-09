@@ -27,10 +27,9 @@ from twisted.logger import Logger
 from twisted.cred.checkers import ANONYMOUS
 from twisted.cred.credentials import Anonymous
 from twisted.cred.error import UnauthorizedLogin
-from twisted.internet.defer import maybeDeferred, succeed, Deferred
+from twisted.internet.defer import maybeDeferred, succeed, Deferred, DeferredList
 
 log = Logger()
-outgoing_packets = []
 
 COMMANDS = [
     ("negotiate", smbtypes.NegReq, smbtypes.NegResp),
@@ -65,6 +64,7 @@ def packetReceived(packet):
     @type packet: L{base.SMBPacket}
     """
     offset = 0
+    returned_data_deferreds = []
     hasNext = True
     last_opened_file = (
         Deferred()
@@ -76,11 +76,15 @@ def packetReceived(packet):
             # of the first packet, we try to offer upgrade to SMB2
             if packet.ctx.get("avatar") is None:
                 log.debug("responding to SMB1 packet")
+                d = Deferred()
+                returned_data_deferreds = [d]
+                packet.return_data = d
                 negotiateResponse(packet)
+                break
             else:
                 packet.close()
                 log.error("Got SMB1 packet while logged in")
-            return
+                return
         elif protocol_id != smbtypes.SMB2_MAGIC:
             packet.close()
             log.error("Unknown packet type")
@@ -141,40 +145,52 @@ signature       {sig}""",
             tid=packet.hdr.tree_id,
             sig=binascii.hexlify(packet.hdr.signature),
         )
+        d = Deferred()
+        returned_data_deferreds.append(d)
         if packet.hdr.command < len(COMMANDS):
             name, req_type, resp_type = COMMANDS[packet.hdr.command]
             func = "smb_" + name
+            req = base.unpack(req_type, packet.data, o2)
+            new_packet = packet.clone(
+                data=this_packet,
+                hdr=packet.hdr,
+                body=req,
+                return_data=d,
+                last_opened_file=last_opened_file,
+            )
             try:
-                if func in globals() and req_type:
-                    req = base.unpack(req_type, packet.data, o2)
-                    new_packet = packet.clone(
-                        data=this_packet,
-                        hdr=packet.hdr,
-                        body=req,
-                        final=not hasNext,
-                        last_opened_file=last_opened_file,
-                    )
+                if func in globals():
                     globals()[func](new_packet, resp_type)
                 else:
                     log.error(
                         "command '{cmd}' not implemented",
                         cmd=COMMANDS[packet.hdr.command][0],
                     )
-                    errorResponse(packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
+                    errorResponse(new_packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
             except NotImplementedError:
                 log.failure("in {cmd}", cmd=COMMANDS[packet.hdr.command][0])
-                errorResponse(packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
+                errorResponse(new_packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
             except base.SMBError as e:
                 log.error("SMB error: {e}", e=str(e))
-                errorResponse(packet, e.ntstatus)
+                errorResponse(new_packet, e.ntstatus)
             except BaseException:
                 log.failure("in {cmd}", cmd=COMMANDS[packet.hdr.command][0])
-                errorResponse(packet, smbtypes.NTStatus.UNSUCCESSFUL)
+                errorResponse(new_packet, smbtypes.NTStatus.UNSUCCESSFUL)
         else:
             log.error("unknown command 0x{cmd:x}", cmd=packet.hdr.command)
+            packet.return_data = d
             errorResponse(packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
 
         offset += packet.hdr.next_command
+
+    def cb_returned_data(datalist):
+        packet.send(b"".join([i[1] for i in datalist]))
+
+    def eb_returned_data(f):
+        log.failure("eb_returned_data", f)
+
+    dl = DeferredList(returned_data_deferreds, fireOnOneErrback=True)
+    dl.addCallbacks(cb_returned_data, eb_returned_data)
 
 
 def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
@@ -191,13 +207,10 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     @param status: packet status, an NTSTATUS code
     @type status: L{int} or L{smbtypes.NTStatus}
     """
-    global outgoing_packets
     if packet.hdr is None:
         packet.hdr = smbtypes.HeaderSync()
     packet.hdr.flags |= smbtypes.FLAG_SERVER
-    if packet.final:
-        packet.hdr.next_command = 0
-    else:
+    if packet.hdr.next_command > 0:
         packet.hdr.next_command = smbtypes.HEADER_SIZE + len(packet.data)
     if isinstance(command, str):
         cmds = [c[0] for c in COMMANDS]
@@ -228,12 +241,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
     else:
         packet.hdr.flags &= ~smbtypes.FLAG_SIGNED
         log.debug("no secret_key, not signing")
-    outgoing_packets.append(data1)
-    if packet.final:
-        packet.data = b"".join(outgoing_packets)
-        packet.send()
-        outgoing_packets = []
-        packet.last_opened_file = None
+    packet.return_data.callback(data1)
 
 
 def smb_negotiate(packet, resp_type):

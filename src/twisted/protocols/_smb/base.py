@@ -372,7 +372,7 @@ class SMBPacket:
     _proto = attr.ib()
     hdr = attr.ib(default=None)
     body = attr.ib(default=None)
-    final = attr.ib(default=True, type=bool)
+    return_data = attr.ib(default=None)
     last_opened_file = attr.ib(default=None)
 
     @property
@@ -384,11 +384,11 @@ class SMBPacket:
         """
         return self._proto.ctx
 
-    def send(self):
+    def send(self, data):
         """
         transmit the packet's data
         """
-        self._proto.sendPacket(self.data)
+        self._proto.sendPacket(data)
 
     def close(self):
         """
