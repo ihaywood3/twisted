@@ -1056,15 +1056,15 @@ glob    {glob}
                 extra = b""
             return base.pack(resp) + extra
 
-        data = b"".join(each_resp(i) for i in resplist)
-        if len(data) > packet.body.output_buffer_length:
-            raise base.SMBError(
-                "output buffer too long", smbtypes.NTStatus.BUFFER_OVERFLOW
-            )
-        packet.data = base.pack(resp_type(length=len(data))) + data
         if len(resplist) == 0:
-            sendHeader(packet, status=smbtypes.NTStatus.NO_MORE_FILES)
+            raise base.SMBError("no more files", smbtypes.NTStatus.NO_MORE_FILES)
         else:
+            data = b"".join(each_resp(i) for i in resplist)
+            if len(data) > packet.body.output_buffer_length:
+                raise base.SMBError(
+                    "output buffer too long", smbtypes.NTStatus.BUFFER_OVERFLOW
+                )
+            packet.data = base.pack(resp_type(length=len(data))) + data
             sendHeader(packet)
 
     def fd_avail(fd2):
