@@ -1194,11 +1194,14 @@ FSCTL_VALIDATE_NEGOTIATE_INFO
 
 
 def smb_change_notify(packet, resp_type):
-    fd = packet.ctx["files"][packet.body.file_id]
+    if packet.body.file_id == base.UUID_MAX:
+        fd = None
+    else:
+        fd = packet.ctx["files"][packet.body.file_id]
     log.debug(
         """
 CHANGE NOTIFY 
------
+-------------
 size    {sz}
 file id {file_id}
 file    {fd!r}
