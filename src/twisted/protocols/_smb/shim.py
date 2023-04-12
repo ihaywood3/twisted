@@ -87,6 +87,7 @@ class FilesystemShim:
         self.__vfs = vfs
 
     def open(self, path, **kwargs):
+        path = path.replace("\\", "/")
         flags = 0
         if kwargs["disposition"] == smbtypes.CreateDisposition.Supersede:
             flags |= os.O_CREAT | os.O_TRUNC
