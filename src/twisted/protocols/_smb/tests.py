@@ -296,29 +296,29 @@ class TestDcerpc(unittest.TestCase):
 
 @implementer(ISMBServer)
 class TestAvatar:
-    def __init__(self, tvfs):
-        self.tvfs = tvfs
+    def __init__(self, shares):
+        self.shares = shares
 
     def getShare(self, name):
-        if name == "share":
-            return self.tvfs
+        if name in self.shares:
+            return self.shares[name]
         else:
             raise NoSuchShare(name)
 
     def listShares(self):
-        return [("share", vfs.IFilesystem, "test disc share")]
+        return [(i, vfs.IFilesystem, "%s disc share" % i) for i in self.shares]
 
     session_id = 0
 
 
 @implementer(portal.IRealm)
 class TestRealm:
-    def __init__(self, tvfs):
-        self.tvfs = tvfs
+    def __init__(self, shares):
+        self.shares = shares
 
     def requestAvatar(self, avatarId, mind, *interfaces):
         log.debug("avatarId={a!r} mind={m!r}", a=avatarId, m=mind)
-        return (ISMBServer, TestAvatar(self.tvfs), lambda: None)
+        return (ISMBServer, TestAvatar(self.shares), lambda: None)
 
 
 class ChatNotFinished(Exception):
@@ -405,7 +405,7 @@ class TestSambaClient(unittest.TestCase):
             fd.write("blaz")
         self.tvfs = vfs.ThreadVfs(self.tpath2)
         # Start the server
-        r = TestRealm(self.tvfs)
+        r = TestRealm({"share": self.tvfs})
         p = portal.Portal(r)
         users_checker = checkers.InMemoryUsernamePasswordDatabaseDontUse()
         users_checker.addUser(TESTUSER, TESTPASSWORD)
