@@ -65,11 +65,11 @@ def packetReceived(packet):
     """
     offset = 0
     returned_data_deferreds = []
-    hasNext = True
+    next_command = 1
     last_opened_file = (
         Deferred()
     )  # for chained packets where one packet refers to a file opened by another
-    while hasNext:
+    while next_command > 0:
         protocol_id = packet.data[offset : offset + len(smbtypes.SMB2_MAGIC)]
         if protocol_id == smbtypes.SMB1_MAGIC:
             # its a SMB1 packet which we dont support with the exception
@@ -99,10 +99,9 @@ def packetReceived(packet):
         # FIXME other flags 3.1 or too obscure
         if isAsync:
             packet.hdr = base.unpack(smbtypes.HeaderAsync, packet.data, offset)
-        if packet.hdr.next_command == 0:
-            hasNext = False
-        if hasNext:
-            this_packet = packet.data[offset : offset + packet.hdr.next_command]
+        next_command = packet.hdr.next_command
+        if next_command > 0:
+            this_packet = packet.data[offset : offset + next_command]
         else:
             this_packet = packet.data[offset:]
         flags_desc = ""
@@ -138,7 +137,7 @@ signature       {sig}""",
             cr=packet.hdr.credit_request,
             flags=packet.hdr.flags,
             flags_desc=flags_desc,
-            nc=packet.hdr.next_command,
+            nc=next_command,
             mid=packet.hdr.message_id,
             sid=packet.hdr.session_id,
             aid=packet.hdr.async_id,
@@ -180,8 +179,13 @@ signature       {sig}""",
             log.error("unknown command 0x{cmd:x}", cmd=packet.hdr.command)
             packet.return_data = d
             errorResponse(packet, smbtypes.NTStatus.NOT_IMPLEMENTED)
-
-        offset += packet.hdr.next_command
+        if next_command > 0:
+            offset += next_command
+            log.debug(
+                "advance offset by 0x{nc:04x} to 0x{offset:04x}",
+                offset=offset,
+                nc=next_command,
+            )
 
     def cb_returned_data(datalist):
         packet.send(b"".join([i[1] for i in datalist]))
