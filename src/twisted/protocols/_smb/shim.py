@@ -240,6 +240,28 @@ class FilesystemShim:
         d.addCallback(cb_ffsi)
         return d
 
+    def getFileFsVolumeInformation(self):
+        return smbtypes.FileFsVolumeInformation()
+
+    def getFileFsAttributeInformation(self):
+        def cb_ffai(v):
+            a = (
+                smbtypes.FILE_UNICODE_ON_DISK
+                | smbtypes.FILE_CASE_PRESERVED_NAMES
+                | smbtypes.FILE_CASE_SENSITIVE_SEARCH
+            )
+            if self.__vfs.read_only:
+                a |= smbtypes.FILE_READ_ONLY_VOLUME
+            return smbtypes.FileFsAttributeInformation(
+                fs_attributes=a,
+                max_path_len=v["disk_namemax"],
+                fs_type=v["disk_fstype"],
+            )
+
+        d = self.__vfs.statfs()
+        d.addCallback(cb_ffai)
+        return d
+
 
 class CommonShim:
     """
@@ -285,6 +307,20 @@ class CommonShim:
 
         d = self._getAttrs()
         d.addCallback(cb_fnoi)
+        return d
+
+    def getFileStreamInformation(self):
+        def cb_fsi(a):
+            cluster_size = a.get("ext_blksize", smbtypes.CLUSTER_SIZE)
+            clusters = int(a["size"] / cluster_size) + 1
+            return smbtypes.FileStreamInformation(
+                alloc_size=cluster_size * clusters,
+                size=a["size"],
+                name="::$DATA",  # default stream stipulated by the spec
+            )
+
+        d = self._getAttrs()
+        d.addCallback(cb_fsi)
         return d
 
     def getFileBasicInformation(self):

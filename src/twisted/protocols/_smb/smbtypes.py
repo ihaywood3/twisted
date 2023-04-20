@@ -956,6 +956,15 @@ class FileAllInformation:
     file_name = endstring()
 
 
+@attr.s
+class FileStreamInformation:
+    next_entry_offset = medium()
+    name_len = medium()
+    size = long()
+    alloc_size = long()
+    name = endstring()
+
+
 #  directory types
 
 
@@ -1075,6 +1084,16 @@ class FileFsSizeInformation:
     avail_units = long()
     sectors_per_unit = medium()
     bytes_per_sector = medium()
+
+
+@attr.s
+class FileFsVolumeInformation:
+    creation_date = long()
+    serial_number = medium()
+    label_len = medium()
+    supports_objects = byte()
+    reserved = byte()
+    label = endstring()
 
 
 # ioctl's
