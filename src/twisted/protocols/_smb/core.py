@@ -635,6 +635,8 @@ def smb_create(packet, resp_type):
                 )
             elif name == smbtypes.CREATE_DURABLE_HANDLE:
                 ctx_as_dict[name] = True  # data doesn't contain anything
+            elif name == smbtypes.CREATE_DURABLE_HANDLE_RECONNECT:
+                ctx_as_dict[name] = UUID(bytes_le=data)
             elif name == smbtypes.CREATE_RESPONSE_LEASE:
                 ctx_as_dict[smbtypes.CREATE_RESPONSE_LEASE] = base.unpack(
                     smbtypes.CreateCtxResponseLease, data
@@ -741,20 +743,27 @@ Context        {ctx!r}
         noi.addCallback(cb_create2, file_id, action, reply_ctx)
         noi.addErrback(eb_common, packet)
 
-    d1 = maybeDeferred(
-        tree.open,
-        path,
-        oplock_level=oplock_level,
-        impersonation_level=impersonation_level,
-        desired_access=packet.body.desired_access,
-        attributes=packet.body.attributes,
-        share_access=packet.body.share_access,
-        disposition=disposition,
-        options=packet.body.options,
-        ctx=ctx_as_dict,
-    )
-    d1.addCallback(cb_create1)
-    d1.addErrback(eb_common, packet)
+    if smbtypes.CREATE_DURABLE_HANDLE_RECONNECT in ctx_as_dict:
+        file_id = ctx_as_dict[smbtypes.CREATE_DURABLE_HANDLE_RECONNECT]
+        driver = packet.ctx["files"][file_id]
+        noi = maybeDeferred(driver.getFileNetworkOpenInformation)
+        noi.addCallback(cb_create2, file_id, smbtypes.CreateAction.Opened, {})
+        noi.addErrback(eb_common, packet)
+    else:
+        d1 = maybeDeferred(
+            tree.open,
+            path,
+            oplock_level=oplock_level,
+            impersonation_level=impersonation_level,
+            desired_access=packet.body.desired_access,
+            attributes=packet.body.attributes,
+            share_access=packet.body.share_access,
+            disposition=disposition,
+            options=packet.body.options,
+            ctx=ctx_as_dict,
+        )
+        d1.addCallback(cb_create1)
+        d1.addErrback(eb_common, packet)
 
 
 def smb_close(packet, resp_type):
@@ -1244,6 +1253,7 @@ class SMBFactory(protocol.Factory):
         """
         protocol.Factory.__init__(self)
         self.portal = portal
+        self.files = {}
         if fake:
             server_uuid = uuid4()
             boot_time = 0
@@ -1264,6 +1274,6 @@ class SMBFactory(protocol.Factory):
                 sys_data=self.sys_data,
                 blob_manager=security_blob.BlobManager(self.sys_data),
                 trees={},
-                files={},
+                files=self.files,
             ),
         )
