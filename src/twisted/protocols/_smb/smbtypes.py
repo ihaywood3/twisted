@@ -810,6 +810,11 @@ class FileStandardInformation:
 
 
 @attr.s
+class FileEaInformation:
+    size = medium()
+
+
+@attr.s
 class FileBasicInformation:
     ctime = long()
     atime = long()

@@ -387,6 +387,9 @@ class CommonShim:
         d.addCallback(cb_attr)
         return d
 
+    def getFileEaInformation(self):
+        return smbtypes.FileEaInformation()
+
 
 class DirShim(CommonShim):
     def __init__(self, vfs, attrs, path):
