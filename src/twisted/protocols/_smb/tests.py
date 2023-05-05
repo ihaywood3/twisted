@@ -70,6 +70,11 @@ class TestBase(unittest.TestCase):
         with self.assertRaises(AssertionError):
             r = FakeStruct(five=424243)
 
+    def test_base_pad(self):
+        a = b"abcd"
+        self.assertEqual(base.pad(a, 8), b"abcd\0\0\0\0")
+        self.assertEqual(base.pad(a, 4), a)
+
     def test_base_endstring(self):
         s1 = "burble"
         b1 = s1.encode("utf-16le")

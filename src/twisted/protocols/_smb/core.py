@@ -215,6 +215,7 @@ def sendHeader(packet, command=None, status=smbtypes.NTStatus.SUCCESS):
         packet.hdr = smbtypes.HeaderSync()
     packet.hdr.flags |= smbtypes.FLAG_SERVER
     if packet.hdr.next_command > 0:
+        packet.data = base.pad(packet.data, 8)
         packet.hdr.next_command = smbtypes.HEADER_SIZE + len(packet.data)
     if isinstance(command, str):
         cmds = [c[0] for c in COMMANDS]
@@ -691,10 +692,7 @@ Context        {ctx!r}
             data = base.pack(data_obj)
             orig_name_len = len(name)
             # name must be padded to 8 bytes
-            pad = 8 - (orig_name_len % 8)
-            if pad < 8:
-                name += b"\0" * pad
-            log.info("padded name: {n!r} pad: {pad}", n=name, pad=pad)
+            name = base.pad(name, 8)
             c = smbtypes.CreateContext(
                 name_length=orig_name_len,
                 data_length=len(data),

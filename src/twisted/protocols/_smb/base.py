@@ -55,6 +55,16 @@ def unixToNTTime(epoch):
     return int(epoch * 10000000.0) + 116444736000000000
 
 
+def pad(data, n):
+    """
+    pad data with zeroes so it is divisible by n
+    """
+    rem = len(data) % n
+    if rem == 0:
+        return data
+    return data + (b"\0" * (n - rem))
+
+
 WIGGLE = 1.0
 
 
