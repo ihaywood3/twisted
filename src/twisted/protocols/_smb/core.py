@@ -983,24 +983,25 @@ output  {obl}
         packet.data = base.pack(resp_type(length=ol)) + data + extra
         sendHeader(packet)
 
-    func_name = "get" + info_class.name
-    try:
-        if info_type is smbtypes.InfoType.FILE:
-            if fd is None:
-                raise base.SMBError(
-                    "must have file_id for FILE info type",
-                    smbtypes.NTStatus.INVALID_PARAMETER,
-                )
-            func = getattr(fd, func_name)
+    def fd_avail(fd2):
+        func_name = "get" + info_class.name
+        try:
+            func = getattr(fd2, func_name)
+        except AttributeError:
+            raise base.SMBError(
+                "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
+            )
+        d = maybeDeferred(func)
+        d.addCallback(cb_info)
+        d.addErrback(eb_common, packet)
+
+    if info_type is smbtypes.InfoType.FILE:
+        if packet.body.file_id == base.UUID_MAX:
+            packet.last_opened_file.addCallback(fd_avail)
         else:
-            func = getattr(tree, func_name)
-    except AttributeError:
-        raise base.SMBError(
-            "%s not available" % info_class.name, smbtypes.NTStatus.NOT_SUPPORTED
-        )
-    d = maybeDeferred(func)
-    d.addCallback(cb_info)
-    d.addErrback(eb_common, packet)
+            fd_avail(fd)
+    else:
+        fd_avail(tree)
 
 
 def smb_query_directory(packet, resp_type):
