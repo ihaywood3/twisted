@@ -906,6 +906,9 @@ class FileFsAttributeInformation:
     fs_type = endstring()
 
 
+DEFAULT_MAX_PATH_LEN = 255
+
+
 class FileMode(enum.IntFlag):
     WRITE_THROUGH = 0x02
     SEQUENTIAL_ONLY = 0x04

@@ -447,12 +447,18 @@ class ThreadVfs:
         return p
 
     def _deferToThread(self, f, *args, **kwargs):
-        return deferToThreadPool(reactor, self.threadpool, f, *args, **kwargs)
+        def eb_log(failure):
+            log.failure("in thread", failure)
+            failure.raiseException()
+
+        d = deferToThreadPool(reactor, self.threadpool, f, *args, **kwargs)
+        d.addErrback(eb_log)
+        return d
 
     def openFile(self, filename, flags=0, attrs=None):
-        return self._deferToThread(
-            _ThreadFile, self, self._absPath(filename), flags, attrs
-        )
+        filename = self._absPath(filename)
+        log.debug("opening file '{filename}'", filename=filename)
+        return self._deferToThread(_ThreadFile, self, filename, flags, attrs)
 
     def removeFile(self, filename):
         if self.read_only:
@@ -493,6 +499,7 @@ class ThreadVfs:
 
     def getAttrs(self, path, followLinks=True):
         path = self._absPath(path)
+        log.debug("stating file '{filename}'", filename=path)
         if followLinks:
             s = self._deferToThread(stat, path)
         else:
@@ -726,6 +733,7 @@ try:
             @param read_only: if C{True}, changes to filesystem forbidden
             @type read_only: C{bool}
             """
+            self.read_only = read_only
             self.tvfs = ThreadVfs(root, threadpool, read_only)
             self.aio = _AIOManager()
 

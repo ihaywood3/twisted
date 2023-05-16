@@ -241,7 +241,15 @@ class FilesystemShim:
         return d
 
     def getFileFsVolumeInformation(self):
-        return smbtypes.FileFsVolumeInformation()
+        def cb_ffvi(v):
+            l = "%08X" % v.get("disk_id", 0)
+            return smbtypes.FileFsVolumeInformation(
+                serial_number=v.get("disk_id", 0), label="%s-%s" % (l[:4], l[4:])
+            )
+
+        d = self.__vfs.statfs()
+        d.addCallback(cb_ffvi)
+        return d
 
     def getFileFsAttributeInformation(self):
         def cb_ffai(v):
@@ -249,13 +257,15 @@ class FilesystemShim:
                 smbtypes.FILE_UNICODE_ON_DISK
                 | smbtypes.FILE_CASE_PRESERVED_NAMES
                 | smbtypes.FILE_CASE_SENSITIVE_SEARCH
+                # not supported but required to please Windows clients
+                | smbtypes.FILE_SUPPORTS_OBJECT_IDS
             )
             if self.__vfs.read_only:
                 a |= smbtypes.FILE_READ_ONLY_VOLUME
             return smbtypes.FileFsAttributeInformation(
                 fs_attributes=a,
-                max_path_len=v["disk_namemax"],
-                fs_type=v["disk_fstype"],
+                max_path_len=v.get("disk_namemax", smbtypes.DEFAULT_MAX_PATH_LEN),
+                fs_type="NTFS",
             )
 
         d = self.__vfs.statfs()
