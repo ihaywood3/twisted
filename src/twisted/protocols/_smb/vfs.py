@@ -27,14 +27,8 @@ if platform.system() == "Linux":
     def lstat(fd):
         return statx.lstat(fd)
 
-    try:
-        import pyudev
 
-        _udev = True
-    except ImportError:
-        _udev = False
 else:
-    _udev = False
 
     def stat(fd):
         return os.stat(fd)
@@ -218,9 +212,6 @@ class IFilesystem(Interface):
          - C{free} free blocks (int)
          - C{disk_id} 32-bit integer disk ID  (int)
          - C{disk_namemax} maximum path length (int)
-         - C{disk_label} disk/volume label (str)
-         - C{disk_fstype} filesystem type (str)
-         - C{disk_birthtime} disk/volume creation time (int)
 
         @rtype: L{dict}
         """
@@ -531,10 +522,9 @@ class ThreadVfs:
         def cb_statfs():
             try:
                 v = os.statvfs(self.root)
-                s = stat(self.root)
             except AttributeError:
                 # some systems dont have at all
-                return None
+                return {}
             d = dict(
                 size=v.f_frsize,  # blocksize in bytes
                 blocks=v.f_blocks,  # total blocks
@@ -546,34 +536,6 @@ class ThreadVfs:
                 d["disk_id64"] = v.f_fsid
             except AttributeError:
                 pass  # only python 3.7+
-            try:
-                d["disk_fstype"] = s.st_fstype
-            except AttributeError:
-                pass  # only Solaris
-            try:
-                if s.st_birthtime:
-                    d["disk_birthtime"] = s.st_birthtime
-            except AttributeError:
-                # classically, only BSDs (?and Darwin)
-                # with statx, linux with glibc >= 2.28 also
-                pass
-            if _udev:
-                try:
-                    ctx = pyudev.Context()
-                    path = "/sys/dev/block/%d:%d" % (
-                        os.major(s.st_dev),
-                        os.minor(s.st_dev),
-                    )
-                    dev = pyudev.Devices.from_path(ctx, path)
-                    if "ID_FS_TYPE" in dev.properties and dev.properties["ID_FS_TYPE"]:
-                        d["disk_fstype"] = dev.properties["ID_FS_TYPE"]
-                    if (
-                        "ID_FS_LABEL" in dev.properties
-                        and dev.properties["ID_FS_LABEL"]
-                    ):
-                        d["disk_label"] = dev.properties["ID_FS_LABEL"]
-                except BaseException:
-                    log.failure("trying to use udev db")
             return d
 
         return self._deferToThread(cb_statfs)

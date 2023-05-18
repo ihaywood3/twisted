@@ -118,7 +118,7 @@ class FilesystemShim:
 
             def cb_diskid(statfs):
                 ctx[smbtypes.CREATE_QUERY_ON_DISK_ID] = smbtypes.CreateCtxQueryOnDiskId(
-                    disk_file_id=attrs["inode"], volume_id=statfs["disk_id64"]
+                    disk_file_id=attrs["inode"], volume_id=statfs.get("disk_id64", 0)
                 )
 
             d = None
